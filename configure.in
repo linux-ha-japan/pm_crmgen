@@ -1,0 +1,51 @@
+AC_PREREQ(2.59)
+AC_INIT(pm_crmgen.py)
+AM_INIT_AUTOMAKE(pm-crmgen, 1.00)
+AC_PREFIX_DEFAULT(/usr)
+PM_PKG="pacemaker"
+AM_MAINTAINER_MODE
+
+dnl>
+dnl> check for python -- 'dnl' is used for comments
+dnl>
+AM_PATH_PYTHON(2.4,,:)
+AC_PATH_PROGS(PYTHON, python)
+AC_MSG_CHECKING(where is python installed)
+if test "x${PYTHON}" = x; then
+	PYTHON="/usr/bin/env python";
+fi
+AC_MSG_RESULT(using $PYTHON);
+
+prefix_orig="$prefix"
+prefix=`eval echo "$prefix"`
+case $prefix in
+	NONE)	prefix=/usr;;
+esac
+var(){
+	case $1 in
+		*'${'*)		res=`eval echo "$1"`;;
+		*)		res="$1";;
+	esac
+	case "$res" in
+		""|NONE)	echo "$2";;
+		*)		echo "$res";;
+	esac
+}
+dnl>
+dnl> Keep copy of original (default) localstatedir
+dnl>
+localstatedir_orig="$localstatedir"
+
+exec_prefix=`var "$exec_prefix" "$prefix"`
+bindir=`var "$bindir" "$exec_prefix/bin"`
+datadir=`var "$datadir" "$prefix/share"`
+
+HA_DATADIR="$datadir"
+AC_SUBST(HA_DATADIR)
+HA_NOARCHDATAHBDIR="$HA_DATADIR/$PM_PKG"
+AC_SUBST(HA_NOARCHDATAHBDIR)
+AC_PROG_LN_S
+
+AC_OUTPUT([
+Makefile
+])
