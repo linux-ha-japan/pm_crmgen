@@ -1,7 +1,10 @@
 MAINTAINERCLEANFILES = Makefile.in
 crmgendir = @HA_NOARCHDATAHBDIR@/pm-crmgen
 crmgen_SCRIPTS = pm_crmgen.py
-SHAREDIR=$(crmgendir)
+crmgen_DATA = pm_crmgen_Env_1.00-1.xls
+
+SHAREDIR = $(crmgendir)
+EXTRA_DIST = $(crmgen_DATA)
 
 install-data-hook:
 	for dir in $(DESTDIR)$(crmgendir) $(DESTDIR)@bindir@;	\

@@ -5,6 +5,7 @@
 %define version 1.00
 %define release 1
 %define prefix /usr
+%define ORGARCH pm-crmgen
 #
 #
 Summary: Pacemaker crm-file generator
@@ -18,6 +19,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}
 BuildRequires: make
 BuildArch: noarch
 Requires: python >= 2.4, python < 3.0
+Requires: pacemaker >= 1.0.9
 
 ########################################
 %description
@@ -27,10 +29,7 @@ Generate crm-file from CSV-file.
 %prep
 ########################################
 rm -rf $RPM_BUILD_ROOT
-
-########################################
-%setup -q
-########################################
+%setup -q -n %{ORGARCH}
 
 ########################################
 %build
@@ -57,20 +56,19 @@ if
 then
 	rm -rf $RPM_BUILD_ROOT
 fi
-rm -rf $RPM_BUILD_DIR/%{name}-%{version}
+rm -rf $RPM_BUILD_DIR/%{name}
 
 ########################################
 %post
 ########################################
-true
+
 ########################################
 %preun
 ########################################
-true
+
 ########################################
 %postun
 ########################################
-true
 
 ########################################
 %files
@@ -79,5 +77,6 @@ true
 %{prefix}/bin/pm_crmgen
 %dir %{prefix}/share/pacemaker/%{name}
 %{prefix}/share/pacemaker/%{name}/pm_crmgen.py
+%{prefix}/share/pacemaker/%{name}/pm_crmgen_Env_1.00-1.xls
 %ghost %{prefix}/share/pacemaker/%{name}/pm_crmgen.pyc
 %ghost %{prefix}/share/pacemaker/%{name}/pm_crmgen.pyo
