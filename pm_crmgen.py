@@ -98,7 +98,7 @@ ATTRIBUTE_TYPE = ['params','meta']
 # INFINITYを示す文字列（出力時に使用）
 SCORE_INFINITY = 'INFINITY'
 # pingd/diskd使用時に生成するcolocationのスコア値
-SCORE_PD_COLOCATION = '1000'
+SCORE_PD_COLOCATION = SCORE_INFINITY
 # crmファイルに出力するコメント
 COMMENT_TBL = {
   'property':     '### Cluster Option ###',
