@@ -1276,7 +1276,7 @@ class Crm:
           s.append('#uname eq %s'%x.getAttribute('node'))
         elif t in ['pingd','diskd']:
           a = x.getAttribute('attr')
-          s.append('defined %s and %s '%(a,a))
+          s.append('not_defined %s or %s '%(a,a))
           if t == 'pingd':
             s.append('lt %s'%x.getAttribute('value'))
           elif t == 'diskd':
