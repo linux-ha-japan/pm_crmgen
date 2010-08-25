@@ -1,21 +1,24 @@
 ########################################
 # Derived definitions
 ########################################
-%define name pm-crmgen
+%define __check_files %{nil}
+%define name pm_crmgen
 %define version 1.00
-%define release 1
+%define release 1.el5
 %define prefix /usr
-%define ORGARCH pm-crmgen
+%define ORGARCH %{name}-%{version}
 #
+%define gendir /usr/share/pacemaker/%{name}
 #
 Summary: Pacemaker crm-file generator
 Name: %{name}
 Version: %{version}
 Release: %{release}
 Group: Applications
-Source: %{name}-%{version}.tar.gz
+Source: %{ORGARCH}.tar.gz
 License: GPL
-BuildRoot: %{_tmppath}/%{name}-%{version}
+Vendor: NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+BuildRoot: %{_tmppath}/%{name}
 BuildRequires: make
 BuildArch: noarch
 Requires: python >= 2.4, python < 3.0
@@ -23,6 +26,7 @@ Requires: pacemaker >= 1.0.9
 
 ########################################
 %description
+########################################
 Generate crm-file from CSV-file.
 
 ########################################
@@ -56,11 +60,12 @@ if
 then
 	rm -rf $RPM_BUILD_ROOT
 fi
-rm -rf $RPM_BUILD_DIR/%{name}
+rm -rf $RPM_BUILD_DIR/%{name}-%{version}
 
 ########################################
 %post
 ########################################
+ln -fs %{gendir}/pm_crmgen.py %{prefix}/bin/pm_crmgen
 
 ########################################
 %preun
@@ -69,14 +74,12 @@ rm -rf $RPM_BUILD_DIR/%{name}
 ########################################
 %postun
 ########################################
+rm -f %{prefix}/bin/pm_crmgen
 
 ########################################
 %files
 ########################################
 %defattr(-,root,root)
-%{prefix}/bin/pm_crmgen
-%dir %{prefix}/share/pacemaker/%{name}
-%{prefix}/share/pacemaker/%{name}/pm_crmgen.py
-%{prefix}/share/pacemaker/%{name}/pm_crmgen_Env_1.00-1.xls
-%ghost %{prefix}/share/pacemaker/%{name}/pm_crmgen.pyc
-%ghost %{prefix}/share/pacemaker/%{name}/pm_crmgen.pyo
+%dir %{gendir}
+%{gendir}/pm_crmgen.py
+%{gendir}/pm_crmgen_Env_1.00-1.xls
