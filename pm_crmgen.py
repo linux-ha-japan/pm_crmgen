@@ -23,7 +23,6 @@
 import os
 import sys
 import codecs
-import datetime
 import re
 import csv
 from optparse import OptionParser
@@ -41,7 +40,6 @@ COMMENT_CHAR = '#'
 TBLHDR_POS = 1
 
 # 内部モード識別子(処理中の表を識別)
-M_GENINFO     = 'GenInfo'
 M_PROPERTY    = 'Property'
 M_RSCDEFAULTS = 'RscDefaults'
 M_RESOURCES   = 'Resources'
@@ -52,7 +50,6 @@ M_COLOCATION  = 'Colocation'
 M_ORDER       = 'Order'
 # {表ヘッダ文字列: 内部モード識別子}
 MODE_TBL = {
-  'information':    M_GENINFO,
   'property':       M_PROPERTY,
   'rsc_defaults':   M_RSCDEFAULTS,
   'resources':      M_RESOURCES,
@@ -72,7 +69,6 @@ PRIM_MODE = [PRIM_PROP,PRIM_ATTR,PRIM_OPER]
 
 # 必須列名
 RQCLM_TBL = {
-  (M_GENINFO,None):        ['name','value'],
   (M_PROPERTY,None):       ['name','value'],
   (M_RSCDEFAULTS,None):    ['name','value'],
   (M_RESOURCES,None):      ['resourceitem','id'],
@@ -87,9 +83,6 @@ RQCLM_TBL = {
 # 非必須列名
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
-# 項目
-ITEM_VERSION = 'crmgen-version'     # crmgenバージョン
-ITEM_CREDATE = 'crmgen-createdate'  # crmファイル生成日時
 
 # 種別
 RESOURCE_TYPE = ['primitive','group','clone']
@@ -484,11 +477,7 @@ class Crm:
     return 0
 
   def csv2xml(self,clmd,RIl,csvl):
-    if self.mode[0] == M_GENINFO:
-      log.debug_l(u'crmファイル生成情報表のデータを処理します。')
-      self.debug_input(clmd,RIl,csvl)
-      self.csv2xml_option('property',clmd,csvl)
-    elif self.mode[0] == M_PROPERTY:
+    if self.mode[0] == M_PROPERTY:
       log.debug_l(u'クラスタ・プロパティ表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_option('property',clmd,csvl)
@@ -535,12 +524,7 @@ class Crm:
   def csv2xml_option(self,tag,clmd,csvl):
     global errflg2; errflg2 = False
     name = csvl[clmd['name']]
-    if self.mode[0] == M_GENINFO and name == ITEM_VERSION:
-      value = '%s %s'%(MY_NAME,MY_VERSION)
-    elif self.mode[0] == M_GENINFO and name == ITEM_CREDATE:
-      value = datetime.datetime.now().strftime('%Y/%m/%d_%H:%M:%S')
-    else:
-      value = csvl[clmd['value']]
+    value = csvl[clmd['value']]
     self.xml_check_nv(self.root,tag,name,value)
     if errflg2:
       return False
@@ -548,7 +532,7 @@ class Crm:
     # Example:
     # <crm>
     #   <property>
-    #     <nv name="crmgen-document-name" value="Document-OSSVERT"/>
+    #     <nv name="no-quorum-policy" value="ignore"/>
     #      :
     #   <rsc_defaults>
     #     <nv name="resource-stickiness" value="INFINITY"/>
