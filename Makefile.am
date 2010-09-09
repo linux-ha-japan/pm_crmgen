@@ -5,7 +5,7 @@ MAINTAINERCLEANFILES	= Makefile.in
 
 crmgendir		= $(prefix)/share/pacemaker/pm_crmgen
 crmgen_SCRIPTS		= pm_crmgen.py
-crmgen_DATA		= pm_crmgen_Env_1.00-1.xls
+crmgen_DATA		= pm_crmgen_env.xls
 crmgenlinkdir		= /usr/bin
 
 SPEC			= $(PACKAGE_NAME).spec

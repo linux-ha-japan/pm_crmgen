@@ -3,7 +3,7 @@
 ########################################
 %define __check_files %{nil}
 %define name pm_crmgen
-%define version 1.00
+%define version 1.0
 %define release 1.el5
 %define prefix /usr
 %define ORGARCH %{name}-%{version}
@@ -82,4 +82,4 @@ rm -f %{prefix}/bin/pm_crmgen
 %defattr(-,root,root)
 %dir %{gendir}
 %{gendir}/pm_crmgen.py
-%{gendir}/pm_crmgen_Env_1.00-1.xls
+%{gendir}/pm_crmgen_env.xls

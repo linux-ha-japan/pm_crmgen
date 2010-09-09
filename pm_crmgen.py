@@ -29,7 +29,7 @@ from optparse import OptionParser
 from xml.dom.minidom import getDOMImplementation
 
 MY_NAME = 'pm_crmgen'
-MY_VERSION = '1.00'
+MY_VERSION = '1.0'
 CODE_PLATFORM = 'utf-8'
 CODE_INFILE = 'shift-jis'
 CODE_OUTFILE = 'utf-8'
