@@ -1236,7 +1236,8 @@ class Crm:
         z = []
         for x in o.childNodes:  # <nv>
           z.append(' %s="%s"'%(x.getAttribute('name'),x.getAttribute('value')))
-        y.append('op %s%s'%(o.nodeName,''.join(z)))
+        if len(z):
+          y.append('op %s%s'%(o.nodeName,''.join(z)))
       s.append(' \\\n\t'.join(y))
     if s:
       return '%s\n%s\n'%(COMMENT_TBL[tag],'\n\n'.join(s))
