@@ -29,7 +29,7 @@ from optparse import OptionParser
 from xml.dom.minidom import getDOMImplementation
 
 MY_NAME = 'pm_crmgen'
-MY_VERSION = '1.0'
+MY_VERSION = '1.1'
 CODE_PLATFORM = 'utf-8'
 CODE_INFILE = 'shift-jis'
 CODE_OUTFILE = 'utf-8'
@@ -46,18 +46,20 @@ M_RESOURCES   = 'Resources'
 M_ATTRIBUTES  = 'Attributes'
 M_PRIMITIVE   = 'Primitive'
 M_LOCATION    = 'Location'
+M_LOCEXPERT   = 'LocExpert'
 M_COLOCATION  = 'Colocation'
 M_ORDER       = 'Order'
 # {表ヘッダ文字列: 内部モード識別子}
 MODE_TBL = {
-  'property':       M_PROPERTY,
-  'rsc_defaults':   M_RSCDEFAULTS,
-  'resources':      M_RESOURCES,
-  'rsc_attributes': M_ATTRIBUTES,
-  'primitive':      M_PRIMITIVE,
-  'location':       M_LOCATION,
-  'colocation':     M_COLOCATION,
-  'order':          M_ORDER
+  'property':        M_PROPERTY,
+  'rsc_defaults':    M_RSCDEFAULTS,
+  'resources':       M_RESOURCES,
+  'rsc_attributes':  M_ATTRIBUTES,
+  'primitive':       M_PRIMITIVE,
+  'location':        M_LOCATION,
+  'location_expert': M_LOCEXPERT,
+  'colocation':      M_COLOCATION,
+  'order':           M_ORDER
 }
 M_SKIP = 'skip'     # 次の表ヘッダまでスキップ
 
@@ -77,16 +79,20 @@ RQCLM_TBL = {
   (M_PRIMITIVE,PRIM_ATTR): ['type','name','value'],
   (M_PRIMITIVE,PRIM_OPER): ['type'],
   (M_LOCATION,None):       ['rsc'],
+  (M_LOCEXPERT,None):      ['rsc','score','bool_op','attribute','op','value'],
   (M_COLOCATION,None):     ['rsc','with-rsc','score'],
   (M_ORDER,None):          ['first-rsc','then-rsc','score']
 }
 # 非必須列名
+CLM_LOCEXPERT = ['role']
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
 
 # 種別
 RESOURCE_TYPE = ['primitive','group','clone']
 ATTRIBUTE_TYPE = ['params','meta']
+# unary_op
+UNARY_OP = ['defined','not_defined']
 
 # INFINITYを示す文字列（出力時に使用）
 SCORE_INFINITY = 'INFINITY'
@@ -210,8 +216,8 @@ class Crm:
   def analyze_header_tbl(self,csvl):
     data = csvl[TBLHDR_POS].lower()
     if self.mode[0] == M_PRIMITIVE and data in PRIM_MODE:
-      if not self.mode[1] and data != PRIM_PROP or \
-             self.mode[1] and data == PRIM_PROP:
+      if (not self.mode[1] and data != PRIM_PROP or
+              self.mode[1] and data == PRIM_PROP):
         log.fmterr_l(u'Primitiveリソース表の定義が正しくありません。')
         self.skip_mode(True)
         return True
@@ -225,7 +231,7 @@ class Crm:
       return True
     x = MODE_TBL.get(data)
     if not x:
-      log.fmterr_l(u'未定義の表ヘッダ [%s](%s) が設定されています。' \
+      log.fmterr_l(u'未定義の表ヘッダ [%s](%s) が設定されています。'
                    %(csvl[TBLHDR_POS],pos2clm(TBLHDR_POS)))
       return False
     self.mode = x,None
@@ -244,6 +250,7 @@ class Crm:
       False : NG
   '''
   def analyze_header_clm(self,csvl,clmd,RIl):
+    ITEM_RI = 'resourceitem'
     def is_RI(clm):
       return (self.mode[0] == M_RESOURCES and clm == ITEM_RI)
     def get_location_clm(clm,pos):
@@ -271,7 +278,6 @@ class Crm:
             log.warn_l(s)
         start = i+1
         lpc -= 1
-    ITEM_RI = 'resourceitem'
     global errflg2; errflg2 = False
     if self.mode == (M_PRIMITIVE,None):
       log.fmterr_l(u'Primitiveリソース表の定義が正しくありません。')
@@ -291,8 +297,9 @@ class Crm:
         if x:
           rql.append(x)
           clm = x
-      elif self.mode[0] == M_COLOCATION and clm in CLM_COLOCATION or \
-           self.mode[0] == M_ORDER and clm in CLM_ORDER:
+      elif (self.mode[0] == M_LOCEXPERT and clm in CLM_LOCEXPERT or
+            self.mode[0] == M_COLOCATION and clm in CLM_COLOCATION or
+            self.mode[0] == M_ORDER and clm in CLM_ORDER):
         rql.append(clm)
       if clm not in clmd:
         clmd[clm] = i
@@ -373,7 +380,7 @@ class Crm:
     if match_score(x):
       return x.replace('infinity',SCORE_INFINITY).replace('inf',SCORE_INFINITY)
     if clm:
-      log.warn_l(u'列定義に無効なスコア値 [%s](%s) の "%s" が設定されています。' \
+      log.warn_l(u'列定義に無効なスコア値 [%s](%s) の "%s" が設定されています。'
                  %(clm,pos2clm(pos),score))
     else:
       log.warn_l(
@@ -501,6 +508,10 @@ class Crm:
       log.debug_l(u'リソース配置制約表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_location(clmd,csvl)
+    elif self.mode[0] == M_LOCEXPERT:
+      log.debug_l(u'リソース配置制約（エキスパート）表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.skip_mode(not self.csv2xml_locexpert(clmd,csvl))
     elif self.mode[0] == M_COLOCATION:
       log.debug_l(u'リソース同居制約表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
@@ -579,15 +590,15 @@ class Crm:
       # primitive - (doesn't contain a resource)
       # group     -  primitive
       # clone     - {primitive|group}
-      if p_rt == 'primitive' or p_rt == 'group' and ri != 'primitive' or \
-         p_rt == 'clone' and ri not in ['primitive','group']:
+      if (p_rt == 'primitive' or p_rt == 'group' and ri != 'primitive' or
+          p_rt == 'clone' and ri not in ['primitive','group']):
         log.fmterr_l(u"リソース種別 ('resourceItem'列) の設定に誤りがあります。")
     rscid = csvl[clmd['id']]
     if not rscid:
       log.fmterr_l(u"'id'列に値が設定されていません。")
-    elif self.rr and \
-         [x for x in self.rr.childNodes if x.getAttribute('id') == rscid]:
-      log.fmterr_l(u'[id: %s] のリソースは既に設定されています。(%s行目)' \
+    elif (self.rr and
+          [x for x in self.rr.childNodes if x.getAttribute('id') == rscid]):
+      log.fmterr_l(u'[id: %s] のリソースは既に設定されています。(%s行目)'
                    %(rscid,x.getAttribute(self.ATTR_CREATED)))
     if errflg2:
       return False
@@ -595,20 +606,16 @@ class Crm:
     # Example:
     # <crm>
     #   <resources>
-    #     <group id="grpPostgreSQLDB">
-    #       <rsc id="prmExPostgreSQLDB"/>
-    #       <rsc id="prmFsPostgreSQLDB1"/>
-    #       <rsc id="prmFsPostgreSQLDB2"/>
-    #       <rsc id="prmFsPostgreSQLDB3"/>
-    #       <rsc id="prmIpPostgreSQLDB"/>
-    #       <rsc id="prmApPostgreSQLDB"/>
+    #     <group id="grpPg">
+    #       <rsc id="prmEx"/>
+    #       <rsc id="prmFs"/>
+    #       <rsc id="prmIp"/>
+    #       <rsc id="prmPg"/>
     #     </group>
-    #     <primitive id="prmExPostgreSQLDB"/>
-    #     <primitive id="prmFsPostgreSQLDB1"/>
-    #     <primitive id="prmFsPostgreSQLDB2"/>
-    #     <primitive id="prmFsPostgreSQLDB3"/>
-    #     <primitive id="prmIpPostgreSQLDB"/>
-    #     <primitive id="prmApPostgreSQLDB"/>
+    #     <primitive id="prmEx"/>
+    #     <primitive id="prmFs"/>
+    #     <primitive id="prmIp"/>
+    #     <primitive id="prmPg"/>
     #   </resources>
     #
     if not self.rr:
@@ -656,7 +663,7 @@ class Crm:
       if atype in ATTRIBUTE_TYPE:
         self.attrd['type'] = atype
       else:
-        log.fmterr_l(u'未定義のパラメータ種別 [type: %s] が設定されています。' \
+        log.fmterr_l(u'未定義のパラメータ種別 [type: %s] が設定されています。'
                      %csvl[clmd['type']])
     else:
       if changed or not self.attrd.get('type'):
@@ -676,9 +683,9 @@ class Crm:
     #       <meta>
     #         <nv name="clone-max" value="2"/>
     #          :
-    #     <primitive id="prmExPostgreSQLDB" ...>
+    #     <primitive id="prmEx" ...>
     #       <params>
-    #         <nv name="device" value="/dev/sdk1"/>
+    #         <nv name="device" value="/dev/xvdb1"/>
     #          :
     #
     return self.xml_append_nv(self.xml_get_node(node,atype),name,value)
@@ -724,7 +731,7 @@ class Crm:
     # Example:
     # <crm>
     #   <resources>
-    #     <primitive id="prmExPostgreSQLDB" class="ocf" provider="heartbeat" type="sfex">
+    #     <primitive id="prmEx" class="ocf" provider="heartbeat" type="sfex">
     #       <params>...</params>
     #       <meta>  ...</meta>
     #       <op>
@@ -783,12 +790,12 @@ class Crm:
     # Example:
     # <crm>
     #   <locations>
-    #     <location rsc="grpPostgreSQLDB">
-    #       <rule type="uname" score="200" node="x3650a"/>
-    #       <rule type="uname" score="100" node="x3650b"/>
-    #       <rule type="pingd" score="-inf" attr="default_ping_set" value="100"/>
-    #       <rule type="diskd" score="-inf" attr="diskcheck_status"/>
-    #       <rule type="diskd" score="-inf" attr="diskcheck_status_internal"/>
+    #     <location rsc="grpPg">
+    #       <rule type="uname" score="200" node="pm01"/>
+    #       <rule type="uname" score="100" node="pm02"/>
+    #       <rule type="pingd" score="-INFINITY" attr="default_ping_set" value="100"/>
+    #       <rule type="diskd" score="-INFINITY" attr="diskcheck_status"/>
+    #       <rule type="diskd" score="-INFINITY" attr="diskcheck_status_internal"/>
     #     </location>
     #
     l = self.xml_get_nodes(self.root,'location','rsc',rsc)
@@ -809,8 +816,8 @@ class Crm:
         attr = {'type':k[0],'score':'-%s'%SCORE_INFINITY,'attr':k[1]}
         if k[0] == 'pingd':
           attr['value'] = k[2]
-        if not set_attr((l,attr,x)) or \
-           not self.add_colocation and not self.add_order:
+        if (not set_attr((l,attr,x)) or
+            not self.add_colocation and not self.add_order):
           continue
         # 関連するcolocation/orderを生成
         ids = self.xml_get_parentids(k[0],'params','name',k[1])
@@ -850,6 +857,103 @@ class Crm:
     return True
 
   '''
+    リソース配置制約（エキスパート）表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_locexpert(self,clmd,csvl):
+    def set_attr(node,names):
+      for k,x in [(k,x) for (k,x) in clmd.items() if k in names and csvl[x]]:
+        node.setAttribute(k,csvl[x])
+      node.setAttribute(self.ATTR_CREATED,str(self.lineno))
+    global errflg2; errflg2 = False
+    changed = False
+    rsc = csvl[clmd['rsc']]
+    if rsc:
+      self.attrd['rsc'] = rsc; changed = True
+    else:
+      rsc = self.attrd.get('rsc')
+      if not rsc:
+        log.fmterr_l(u"'rsc'列に値が設定されていません。")
+    self.xml_get_rscnode(rsc)
+    if csvl[clmd['score']]:
+      x = self.score_validate(csvl[clmd['score']],clmd['score'])
+      if x:
+        csvl[clmd['score']] = self.attrd['score'] = x
+      else:
+        self.attrd['score'] = csvl[clmd['score']]
+      r = self.doc.createElement('rule')
+    else:
+      if changed or not rsc:
+        log.fmterr_l(u"'score'列に値が設定されていません。")
+      else:
+        if csvl[clmd['bool_op']]:
+          log.warn_l(u"'bool_op'列に値が設定されています。")
+        if 'role' in clmd and csvl[clmd['role']]:
+          log.warn_l(u"'role'列に値が設定されています。")
+        csvl[clmd['score']] = self.attrd['score']
+      r = None
+    if not csvl[clmd['attribute']]:
+      log.fmterr_l(u"'attribute'列に値が設定されていません。")
+    if not csvl[clmd['op']]:
+      log.fmterr_l(u"'op'列に値が設定されていません。")
+    else:
+      if csvl[clmd['op']].lower() in UNARY_OP:
+        if csvl[clmd['value']]:
+          log.warn_l(u"'value'列に値が設定されています。")
+      else:
+        if not csvl[clmd['value']]:
+          log.fmterr_l(u"'value'列に値が設定されていません。")
+    if errflg2:
+      return False
+    #
+    # Example:
+    # <crm>
+    #   <locexperts>
+    #     <locexpert rsc="grpPg">
+    #       <rule score="200">
+    #         <exp attribute="#uname" op="eq" value="pm01"/>
+    #       </rule>
+    #        :
+    #       <rule score="-INFINITY" bool_op="or">
+    #         <exp attribute="default_ping_set" op="not_defined"/>
+    #         <exp attribute="default_ping_set" op="eq" value="yellow"/>
+    #         <exp attribute="default_ping_set" op="eq" value="red"/>
+    #       </rule>
+    #       <rule score="-INFINITY" bool_op="and" role="Master">
+    #         <exp attribute="attr1" op="ne" value="val1"/>
+    #         <exp attribute="attr1" op="ne" value="val2"/>
+    #       </rule>
+    #     </locexpert>
+    #
+    x = self.xml_get_node(self.root,'locexperts')
+    l = self.xml_get_nodes(x,'locexpert','rsc',rsc)
+    if l:
+      l = l[0]
+    else:
+      l = self.doc.createElement('locexpert')
+      l.setAttribute('rsc',rsc)
+      x.appendChild(l)
+    if r:
+      x = self.xml_get_nodes(x,'rule',self.ATTR_STATE,'working')
+      if x:
+        x[0].removeAttribute(self.ATTR_STATE)
+      r.setAttribute(self.ATTR_STATE,'working')
+      set_attr(r,['score','bool_op','role'])
+      l.appendChild(r)
+    x = self.xml_get_nodes(l,'rule',self.ATTR_STATE,'working')[0]
+    if x.getElementsByTagName('exp') and not x.getAttribute('bool_op'):
+      log.fmterr_l(u"'bool_op'列に値が設定されていません。(%s行目)"
+                   %x.getAttribute(self.ATTR_CREATED))
+      return False
+    set_attr(self.xml_create_child(x,'exp'),['attribute','op','value'])
+    return True
+
+  '''
     リソース同居制約表データのXML化
     [引数]
       clmd : 列情報（[列名: 列番号]）を保持する辞書
@@ -875,9 +979,9 @@ class Crm:
     # Example:
     # <crm>
     #   <colocations>
-    #     <colocation socre="1000" rsc="grpPostgreSQLDB" with-rsc="clnPingd"/>
-    #     <colocation socre="1000" rsc="grpPostgreSQLDB" with-rsc="clnDiskd1"/>
-    #     <colocation socre="1000" rsc="grpPostgreSQLDB" with-rsc="clnDiskd2"/>
+    #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnPingd"/>
+    #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnDiskd1"/>
+    #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnDiskd2"/>
     #   </colocations>
     #
     c = self.xml_create_child(
@@ -917,9 +1021,9 @@ class Crm:
     # Example:
     # <crm>
     #   <orders>
-    #     <order score="0" first-rsc="clnPingd"  then-rsc="grpPostgreSQLDB" symmetrical="false"/>
-    #     <order score="0" first-rsc="clnDiskd1" then-rsc="grpPostgreSQLDB" symmetrical="false"/>
-    #     <order score="0" first-rsc="clnDiskd2" then-rsc="grpPostgreSQLDB" symmetrical="false"/>
+    #     <order score="0" first-rsc="clnPingd"  then-rsc="grpPg" symmetrical="false"/>
+    #     <order score="0" first-rsc="clnDiskd1" then-rsc="grpPg" symmetrical="false"/>
+    #     <order score="0" first-rsc="clnDiskd2" then-rsc="grpPg" symmetrical="false"/>
     #   </orders>
     #
     o = self.xml_create_child(self.xml_get_node(self.root,'orders'),'order')
@@ -941,9 +1045,9 @@ class Crm:
              - pos  : 現在処理中のCSVの列番号
                ----
                <locations>
-                 <location rsc="grpPostgreSQLDB"> (※1)
-                   <rule type="uname" score="200" node="x3650a"/> (※2)
-                   <rule type="uname" score="100" node="x3650b"/> (※2)
+                 <location rsc="grpPg"> (※1)
+                   <rule type="uname" score="200" node="pm01"/> (※2)
+                   <rule type="uname" score="100" node="pm02"/> (※2)
                     :
                  </location>
                ----
@@ -960,7 +1064,7 @@ class Crm:
             break
         else:
           lineno,pos = r.getAttribute(self.ATTR_CREATED).split()
-          log.warn_l(u'%sの設定による制約は既に指定されています。(%s行目、%s)' \
+          log.warn_l(u'%sの設定による制約は既に指定されています。(%s行目、%s)'
                      %(pos2clm(tup[2]),lineno,pos2clm(pos)))
           break
     elif tag in ['colocation','order']:
@@ -987,7 +1091,7 @@ class Crm:
           elif x.getAttribute(self.ATTR_STATE):
             x.parentNode.removeChild(x).unlink()
           else:
-            log.warn_l(u'同じ設定値が既に指定されています。(%s行目)' \
+            log.warn_l(u'同じ設定値が既に指定されています。(%s行目)'
                        %x.getAttribute(self.ATTR_CREATED))
           break
     return True
@@ -1029,7 +1133,7 @@ class Crm:
       s = u''
       if node.getAttribute('id'):
         s = u'。%sの%sパラメータ'%(node.getAttribute('id'),tag)
-      log.warn_l(u"項目 ('name'列%s) の値 [%s] は既に設定されています。(%s行目)" \
+      log.warn_l(u"項目 ('name'列%s) の値 [%s] は既に設定されています。(%s行目)"
                  %(s,name,x.getAttribute(self.ATTR_CREATED)))
       break
 
@@ -1247,10 +1351,10 @@ class Crm:
     # location <id> <rsc> {rules}
     #
     # rules ::
-    #   rule <score>: <expression>
-    #   [rule <score>: <expression>...]
+    #   rule [$role=<role>] <score>: <expression>
+    #   [rule [$role=<role>] <score>: <expression>...]
     #
-    s = []; tag = 'location'
+    s = []; tag = 'location'; seq = 0
     for i,l in enumerate(self.root.getElementsByTagName(tag)):
       r = l.getAttribute('rsc')
       s.append('location rsc_location-%s-%d %s'%(r,i+1,r))
@@ -1266,6 +1370,26 @@ class Crm:
             s.append('lt %s'%x.getAttribute('value'))
           elif t == 'diskd':
             s.append('eq ERROR')
+      seq = i+1
+      s.append('\n')
+    for i,l in enumerate(self.root.getElementsByTagName('locexpert')):
+      r = l.getAttribute('rsc')
+      s.append('location rsc_location-%s-%d %s'%(r,seq+i+1,r))
+      for x in l.getElementsByTagName('rule'):
+        s.append(' \\\n\trule ')
+        if x.getAttribute('role'):
+          s.append('$role="%s" '%x.getAttribute('role'))
+        s.append('%s: '%x.getAttribute('score'))
+        z = []
+        for y in x.getElementsByTagName('exp'):
+          o = y.getAttribute('op')
+          if o.lower() in UNARY_OP:
+            z.append('%s %s'%(o,y.getAttribute('attribute')))
+          else:
+            z.append('%s %s %s'
+              %(y.getAttribute('attribute'),o,y.getAttribute('value')))
+        if z:
+          s.append((' %s '%x.getAttribute('bool_op')).join(z))
       s.append('\n')
     if s:
       return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
@@ -1449,7 +1573,7 @@ class Log:
     if ret == 1:
       self.stderr(u'crmファイル生成中にエラーが発生しました。処理を中止します。\n')
     elif ret == 2 and self.WARN > self.level:
-      self.stderr(u'警告が発生しています。' \
+      self.stderr(u'警告が発生しています。'
                   u"警告のログを出力するには '-V' オプションを指定してください。\n")
 
   def print2e(self,level,msg,file=None,lineno=None):

@@ -3,8 +3,8 @@
 ########################################
 %define __check_files %{nil}
 %define name pm_crmgen
-%define version 1.0
-%define release 1.el5
+%define version 1.1
+%define release 1.el@RHEL_VER@
 %define prefix /usr
 %define ORGARCH %{name}-%{version}
 #
