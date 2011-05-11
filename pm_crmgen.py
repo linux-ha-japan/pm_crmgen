@@ -28,10 +28,7 @@ import csv
 from optparse import OptionParser
 from xml.dom.minidom import getDOMImplementation
 
-MY_NAME = 'pm_crmgen'
-MY_VERSION = '1.1'
 CODE_PLATFORM = 'utf-8'
-CODE_INFILE = 'shift-jis'
 CODE_OUTFILE = 'utf-8'
 
 # コメント開始文字
@@ -139,7 +136,7 @@ class Crm:
       for x in sys.argv:
         s.append(unicode(x,CODE_PLATFORM))
     except Exception,msg:
-      log.innererr(u'コマンドライン文字列のunicodeへの変換に失敗しました。',msg)
+      log.innererr(u'コマンドライン文字列のUnicodeへの変換に失敗しました。',msg)
       log.quitmsg(1)
       sys.exit(1)
     log.info(u'実行コマンドライン [%s]'%' '.join(s))
@@ -160,7 +157,11 @@ class Crm:
       False : NG（不正なオプションあり）
   '''
   def optionParser(self):
-    p = OptionParser('%s [options] CSVFILE'%MY_NAME)
+    usage = '%prog [options] CSV_FILE'
+    version = '1.1'
+    description = "  character encoding of supported CSV_FILE are 'UTF-8' and 'Shift_JIS'"
+    prog = 'pm_crmgen'
+    p = OptionParser(usage=usage,version=version,description=description,prog=prog)
     p.add_option('-o',dest='output_file',
       help='output generated crm-file to the named file (default: stdout)')
     p.add_option('-V',action='count',dest='loglevel',default=Log.ERROR,
@@ -170,12 +171,9 @@ class Crm:
       help='colocation constraint' + s)
     p.add_option('-O',action='store_false',dest='add_order',default=True,
       help='order constraint' + s)
-    p.add_option('-v','--version',action='callback',callback=print_version,
-      help='output version information and exit')
     try:
       opts,args = p.parse_args()
     except SystemExit,retcode:
-      # -v/-h指定時の終了コードを「0」にする
       if str(retcode) != '0':
         return False
       sys.exit(0)
@@ -195,7 +193,7 @@ class Crm:
       if opts.output_file:
         self.output = unicode(opts.output_file,CODE_PLATFORM)
     except Exception:
-      log.stderr(u'ファイル名のunicodeへの変換に失敗しました。\n')
+      log.stderr(u'ファイル名のUnicodeへの変換に失敗しました。\n')
       return False
     log.level = opts.loglevel
     self.add_colocation = opts.add_colocation
@@ -408,6 +406,11 @@ class Crm:
       log.info(msg)
       return 1
     try:
+      code_infile = detect_char(fd.read())
+      if not code_infile:
+        fd.close()
+        return 1
+      fd.seek(0)
       csvReader = csv.reader(fd)
     except Exception,msg:
       log.error(u'ファイルの読み込みに失敗しました。[%s]'%self.input)
@@ -423,7 +426,7 @@ class Crm:
         log.error(u'ファイルの読み込みに失敗しました。[%s]'%self.input)
         log.info(msg)
         return 1
-      if not unicode_listitem(csvl,CODE_INFILE):
+      if not unicode_listitem(csvl,code_infile):
         fd.close()
         return 1
       if not self.line_validate(csvl):
@@ -1602,12 +1605,12 @@ class Log:
 
 
 '''
-  リスト（要素）の文字コードをunicodeに変換
+  リスト（要素）の文字コードをUnicodeに変換
     ・要素の前後の全半角空白/タブ/改行を削除
     ・文字列中の改行を半角空白に置換
   [引数]
     list     : 変換対象のリスト
-    encoding : `encoding' -> unicode に変換
+    encoding : `encoding' -> Unicode に変換
   [戻り値]
     True  : OK
     False : NG
@@ -1619,9 +1622,40 @@ def unicode_listitem(list,encoding):
     try:
       list[i] = del_blank(unicode(data.replace('\n',' '),encoding))
     except:
-      log.error(u'データのunicodeへの変換に失敗しました。')
+      log.error(u'データのUnicodeへの変換に失敗しました。')
       return False
   return True
+
+'''
+  データの文字コードを判定
+  [引数]
+    data : 対象データ
+  [戻り値]
+    エンコーディング（を示す文字列）
+'''
+def detect_char(data):
+  if not has_non_ascii(data.replace('\n','')):
+    e = 'ascii'
+    log.debug_f(u'CSVファイルの文字エンコーディング [%s]'%e)
+    return e
+  for e in ['euc_jp','euc_jis_2004','euc_jisx0213','iso2022_jp','iso2022_jp_1',
+            'iso2022_jp_2','iso2022_jp_2004','iso2022_jp_3','iso2022_jp_ext']:
+    try:
+      unicode(data,e)
+      log.debug_f(u'CSVファイルの文字エンコーディング [%s]'%e)
+      break
+    except:
+      pass
+  else:
+    for e in ['utf-8','cp932','shift_jis','shift_jis_2004','shift_jisx0213']:
+      try:
+        unicode(data,e)
+        log.debug_f(u'CSVファイルの文字エンコーディング [%s]'%e)
+        return e
+      except:
+        pass
+  log.error(u'CSVファイルの文字エンコーディングが未対応のエンコーディングです。')
+  return None
 
 '''
   文字列の前後空白（全半角空白/タブ文字）を取り除く
@@ -1691,10 +1725,6 @@ def pos2clm(pos):
     pos = (pos - 1) / 26
   return u'列' + s
 
-def print_version(option,opt,value,parser):
-  sys.stdout.write('%s %s\n'%(MY_NAME,MY_VERSION))
-  sys.exit(0)
-
 
 try:
   sys.stdout = codecs.getwriter(CODE_PLATFORM)(sys.stdout)
@@ -1702,7 +1732,6 @@ try:
 except Exception:
   sys.stderr.write('failed to encode stdout and stderr.\n')
   sys.exit(1)
-
 
 if __name__ == '__main__':
   log = Log()
