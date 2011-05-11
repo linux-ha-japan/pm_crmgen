@@ -89,7 +89,7 @@ CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
 
 # 種別
-RESOURCE_TYPE = ['primitive','group','clone']
+RESOURCE_TYPE = ['primitive','group','clone','ms','master']
 ATTRIBUTE_TYPE = ['params','meta']
 # unary_op
 UNARY_OP = ['defined','not_defined']
@@ -105,6 +105,7 @@ COMMENT_TBL = {
   'primitive':    '### Primitive Configuration ###',
   'group':        '### Group Configuration ###',
   'clone':        '### Clone Configuration ###',
+  'ms':           '### Master/Slave Configuration ###',
   'location':     '### Resource Location ###',
   'colocation':   '### Resource Colocation ###',
   'order':        '### Resource Order ###'
@@ -574,6 +575,8 @@ class Crm:
         u'未定義のリソース種別 [type: %s] が設定されています。'%csvl[x[0]])
     else:
       pos = x[0]
+      if csvl[pos].lower() == 'master':
+        csvl[pos] = 'ms'
       ri = csvl[pos].lower()
     log.debug1_l('rsc_config: - %s'%self.pcr)
     depth = -1
@@ -590,16 +593,17 @@ class Crm:
       # primitive - (doesn't contain a resource)
       # group     -  primitive
       # clone     - {primitive|group}
+      # ms        - {primitive|group}
       if (p_rt == 'primitive' or p_rt == 'group' and ri != 'primitive' or
-          p_rt == 'clone' and ri not in ['primitive','group']):
+          p_rt in ['clone','ms'] and ri not in ['primitive','group']):
         log.fmterr_l(u"リソース種別 ('resourceItem'列) の設定に誤りがあります。")
     rscid = csvl[clmd['id']]
     if not rscid:
       log.fmterr_l(u"'id'列に値が設定されていません。")
-    elif (self.rr and
-          [x for x in self.rr.childNodes if x.getAttribute('id') == rscid]):
-      log.fmterr_l(u'[id: %s] のリソースは既に設定されています。(%s行目)'
-                   %(rscid,x.getAttribute(self.ATTR_CREATED)))
+    elif self.rr:
+      for x in [x for x in self.rr.childNodes if x.getAttribute('id') == rscid]:
+        log.fmterr_l(u'[id: %s] のリソースは既に設定されています。(%s行目)'
+                     %(rscid,x.getAttribute(self.ATTR_CREATED)))
     if errflg2:
       return False
     #
@@ -620,7 +624,7 @@ class Crm:
     #
     if not self.rr:
       self.rr = self.xml_create_child(self.root,'resources')
-    # 「<primitive|group|clone id="xxx"/>」を追加
+    # 「<primitive|group|clone|ms id="xxx"/>」を追加
     x = self.xml_create_child(self.rr,ri)
     x.setAttribute('id',rscid)
     x.setAttribute(self.ATTR_CREATED,str(self.lineno))
@@ -629,7 +633,7 @@ class Crm:
     log.debug1_l('rsc_config: + %s'%self.pcr)
     if depth == 0:
       return True
-    # 親子関係である場合は「<group|clone>」の子として、
+    # 親子関係である場合は「<group|clone|ms>」の子として、
     x = self.xml_get_nodes(self.rr,p_rt,'id',p_id)[0]
     # 「<rsc id="yyy"/>」を追加
     self.xml_create_child(x,'rsc').setAttribute('id',rscid)
@@ -748,15 +752,10 @@ class Crm:
     elif self.mode[1] == PRIM_ATTR:
       return self.csv2xml_attributes(clmd,csvl,self.pr)
     elif self.mode[1] == PRIM_OPER:
-      o = self.xml_get_node(self.xml_get_node(self.pr,'op'),optype)
+      o = self.xml_create_child(self.xml_get_node(self.pr,'op'),optype)
       for k,x in clmd.items():
         if k in RQCLM_TBL[self.mode] or not csvl[x]:
           continue
-        for y in [y for y in o.childNodes if y.getAttribute('name') == k]:
-          log.warn_l(
-            u'オペレーション [%s] の [%s] 項目値は既に設定されています。(%s行目)'
-            %(o.nodeName,k,y.getAttribute(self.ATTR_CREATED)))
-          break
         self.xml_append_nv(o,k,csvl[x])
     return True
 
@@ -1236,7 +1235,7 @@ class Crm:
     リソース構成表データのチェック
       ・リソース構成表で設定したprimitiveリソースに対して
         Primitiveリソース表が設定されているか
-      ・group/cloneリソースにリソースが設定されているか
+      ・group/clone/msリソースにリソースが設定されているか
     [引数]
       なし
     [戻り値]
@@ -1268,7 +1267,7 @@ class Crm:
     s = [
       self.xml2crm_option('property'),
       self.xml2crm_option('rsc_defaults'),
-      self.xml2crm_resources(['group','clone']),
+      self.xml2crm_resources(['group','clone','ms']),
       self.xml2crm_primitive(),
       self.xml2crm_location(),
       self.xml2crm_colocation(),
@@ -1300,6 +1299,10 @@ class Crm:
     #   [params attr_list]
     # /
     # clone <name> <rsc>
+    #   [meta   attr_list]
+    #   [params attr_list]
+    # /
+    # ms <name> <rsc>
     #   [meta   attr_list]
     #   [params attr_list]
     #
@@ -1611,12 +1614,13 @@ class Log:
 '''
 def unicode_listitem(list,encoding):
   for i,data in [(i,x) for (i,x) in enumerate(list) if x]:
+    while data.count('\n\n'):
+      data = data.replace('\n\n','\n')
     try:
-      s = unicode(data,encoding)
-    except Exception,msg:
-      log.innererr(u'データのunicodeへの変換に失敗しました。',msg)
+      list[i] = del_blank(unicode(data.replace('\n',' '),encoding))
+    except:
+      log.error(u'データのunicodeへの変換に失敗しました。')
       return False
-    list[i] = del_blank(s).replace('\n',' ')
   return True
 
 '''
