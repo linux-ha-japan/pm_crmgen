@@ -44,37 +44,37 @@ rm -rf $RPM_BUILD_ROOT
 ########################################
 
 ########################################
-%pre
-########################################
-
-########################################
 %install
 ########################################
 make DESTDIR=$RPM_BUILD_ROOT install
+ln -fs %{gendir}/pm_crmgen.py %{prefix}/bin/pm_crmgen
 
 ########################################
 %clean
 ########################################
 if
-	[ -n "${RPM_BUILD_ROOT}"  -a "${RPM_BUILD_ROOT}" != "/" ]
+	[ -n "${RPM_BUILD_ROOT}" -a "${RPM_BUILD_ROOT}" != "/" ]
 then
 	rm -rf $RPM_BUILD_ROOT
 fi
 rm -rf $RPM_BUILD_DIR/%{name}-%{version}
 
 ########################################
+%pre
+########################################
+true
+########################################
 %post
 ########################################
-ln -fs %{gendir}/pm_crmgen.py %{prefix}/bin/pm_crmgen
-
+true
 ########################################
 %preun
 ########################################
-
+true
 ########################################
 %postun
 ########################################
-rm -f %{prefix}/bin/pm_crmgen
+true
 
 ########################################
 %files
@@ -83,3 +83,4 @@ rm -f %{prefix}/bin/pm_crmgen
 %dir %{gendir}
 %{gendir}/pm_crmgen.py
 %{gendir}/pm_crmgen_env.xls
+%{prefix}/bin/pm_crmgen
