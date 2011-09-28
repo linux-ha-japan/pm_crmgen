@@ -40,6 +40,7 @@ TBLHDR_POS = 1
 M_NODE        = 'Node'
 M_PROPERTY    = 'Property'
 M_RSCDEFAULTS = 'RscDefaults'
+M_OPDEFAULTS  = 'OpDefaults'
 M_RESOURCES   = 'Resources'
 M_ATTRIBUTES  = 'Attributes'
 M_PRIMITIVE   = 'Primitive'
@@ -52,6 +53,7 @@ MODE_TBL = {
   'node':            M_NODE,
   'property':        M_PROPERTY,
   'rsc_defaults':    M_RSCDEFAULTS,
+  'op_defaults':     M_OPDEFAULTS,
   'resources':       M_RESOURCES,
   'rsc_attributes':  M_ATTRIBUTES,
   'primitive':       M_PRIMITIVE,
@@ -73,6 +75,7 @@ RQCLM_TBL = {
   (M_NODE,None):           ['uname','ptype','name','value'],
   (M_PROPERTY,None):       ['name','value'],
   (M_RSCDEFAULTS,None):    ['name','value'],
+  (M_OPDEFAULTS,None):     ['name','value'],
   (M_RESOURCES,None):      ['resourceitem','id'],
   (M_ATTRIBUTES,None):     ['id','type','name','value'],
   (M_PRIMITIVE,PRIM_PROP): ['id','class','provider','type'],
@@ -106,6 +109,7 @@ COMMENT_TBL = {
   'node':         '### Cluster Node ###',
   'property':     '### Cluster Option ###',
   'rsc_defaults': '### Resource Defaults ###',
+  'op_defaults':  '### Operations Defaults ###',
   'primitive':    '### Primitive Configuration ###',
   'group':        '### Group Configuration ###',
   'clone':        '### Clone Configuration ###',
@@ -500,6 +504,10 @@ class Crm:
       log.debug_l(u'リソース・デフォルト表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_option('rsc_defaults',clmd,csvl)
+    elif self.mode[0] == M_OPDEFAULTS:
+      log.debug_l(u'オペレーション・デフォルト表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.csv2xml_option('op_defaults',clmd,csvl)
     elif self.mode[0] == M_RESOURCES:
       log.debug_l(u'リソース構成表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
@@ -602,7 +610,7 @@ class Crm:
     return True
 
   '''
-    クラスタ・プロパティ/リソース・デフォルト表データのXML化
+    クラスタ・プロパティ/リソース、オペレーション・デフォルト表データのXML化
     [引数]
       tag  : データ（<nv .../>）を追加するNodeのタグ名
       clmd : 列情報（[列名: 列番号]）を保持する辞書
@@ -626,6 +634,9 @@ class Crm:
     #      :
     #   <rsc_defaults>
     #     <nv name="resource-stickiness" value="INFINITY"/>
+    #      :
+    #   <op_defaults>
+    #     <nv name="record-pending" value="true"/>
     #      :
     #
     return self.xml_append_nv(self.xml_get_node(self.root,tag),name,value)
@@ -1353,6 +1364,7 @@ class Crm:
       self.xml2crm_node(),
       self.xml2crm_option('property'),
       self.xml2crm_option('rsc_defaults'),
+      self.xml2crm_option('op_defaults'),
       self.xml2crm_resources(['group','clone','ms']),
       self.xml2crm_primitive(),
       self.xml2crm_location(),
@@ -1386,6 +1398,9 @@ class Crm:
     #   <option>=<value> [<option>=<value>...]
     # /
     # rsc_defaults
+    #   <option>=<value> [<option>=<value>...]
+    # /
+    # op_defaults
     #   <option>=<value> [<option>=<value>...]
     #
     s = []
