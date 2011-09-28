@@ -258,13 +258,10 @@ class Crm:
     ITEM_RI = 'resourceitem'
     def is_RI(clm):
       return (self.mode[0] == M_RESOURCES and clm == ITEM_RI)
-    def get_location_clm(clm,pos):
+    def get_location_clm(clm):
       x = clm.split(':')
       if clm.lower().startswith('score:') and len(x) == 2 and x[1]:
-        score = self.score_validate(x[1],pos,clm)
-        if score:
-          return 'score:%s'%score
-        return 'score:%s'%x[1]
+        return 'score:%s'%self.score_validate(x[1])
       elif clm.lower().startswith('pingd:') and len(x) == 3 and x[1] and x[2]:
         return 'pingd:%s:%s'%(x[1],x[2])
       elif clm.lower().startswith('diskd:') and len(x) == 2 and x[1]:
@@ -298,7 +295,7 @@ class Crm:
         rql.append(data)
         clm = data
       elif self.mode[0] == M_LOCATION and clm not in RQCLM_TBL[self.mode]:
-        x = get_location_clm(data,i)
+        x = get_location_clm(data)
         if x:
           rql.append(x)
           clm = x
@@ -379,18 +376,13 @@ class Crm:
       return 'false'
     log.warn_l(u'無効な値 [%s](%s) が設定されています。'%(bool,pos2clm(pos)))
 
-  def score_validate(self,score,pos,clm=None):
+  def score_validate(self,score):
     if not score:
       return
     x = score.lower()
-    if match_score(x):
+    if re.match('^[+-]?(inf|infinity)$',x) is not None:
       return x.replace('infinity',SCORE_INFINITY).replace('inf',SCORE_INFINITY)
-    if clm:
-      log.warn_l(u'列定義に無効なスコア値 [%s](%s) の "%s" が設定されています。'
-                 %(clm,pos2clm(pos),score))
-    else:
-      log.warn_l(
-        u'無効なスコア値 [%s](%s) が設定されています。'%(score,pos2clm(pos)))
+    return score
 
   '''
     crmファイル生成（【CSV】->【XML】->【crmコマンド】）
@@ -963,12 +955,9 @@ class Crm:
       if not rsc:
         log.fmterr_l(u"'rsc'列に値が設定されていません。")
     self.xml_get_rscnode(rsc)
-    if csvl[clmd['score']]:
-      x = self.score_validate(csvl[clmd['score']],clmd['score'])
-      if x:
-        csvl[clmd['score']] = self.attrd['score'] = x
-      else:
-        self.attrd['score'] = csvl[clmd['score']]
+    x = self.score_validate(csvl[clmd['score']])
+    if x:
+      csvl[clmd['score']] = self.attrd['score'] = x
       r = self.doc.createElement('rule')
     else:
       if changed or not rsc:
@@ -1051,7 +1040,7 @@ class Crm:
       log.fmterr_l(u"'%s'列に値が設定されていません。"%x)
     self.xml_get_rscnode(csvl[clmd['rsc']])
     self.xml_get_rscnode(csvl[clmd['with-rsc']])
-    x = self.score_validate(csvl[clmd['score']],clmd['score'])
+    x = self.score_validate(csvl[clmd['score']])
     if x:
       csvl[clmd['score']] = x
     if errflg2:
@@ -1089,7 +1078,7 @@ class Crm:
       log.fmterr_l(u"'%s'列に値が設定されていません。"%x)
     self.xml_get_rscnode(csvl[clmd['first-rsc']])
     self.xml_get_rscnode(csvl[clmd['then-rsc']])
-    x = self.score_validate(csvl[clmd['score']],clmd['score'])
+    x = self.score_validate(csvl[clmd['score']])
     if x:
       csvl[clmd['score']] = x
     if clmd.get('symmetrical'):
@@ -1801,18 +1790,6 @@ def dict2list(d,value_only=None):
   if value_only:
     return l
   return [(k,x) for y in l for (k,x) in d.items() if x == y]
-
-'''
-  スコア値の妥当性チェック
-  [引数]
-    score : スコア値
-  [戻り値]
-    True  : OK
-    False : NG
-'''
-def match_score(score):
-  # from: crmコマンド
-  return re.match('^[+-]?(inf|infinity|INFINITY|[[0-9]+)$',score) is not None
 
 '''
   列番号をExcelでの列名に変換
