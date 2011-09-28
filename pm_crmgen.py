@@ -37,6 +37,7 @@ COMMENT_CHAR = '#'
 TBLHDR_POS = 1
 
 # 内部モード識別子(処理中の表を識別)
+M_NODE        = 'Node'
 M_PROPERTY    = 'Property'
 M_RSCDEFAULTS = 'RscDefaults'
 M_RESOURCES   = 'Resources'
@@ -48,6 +49,7 @@ M_COLOCATION  = 'Colocation'
 M_ORDER       = 'Order'
 # {表ヘッダ文字列: 内部モード識別子}
 MODE_TBL = {
+  'node':            M_NODE,
   'property':        M_PROPERTY,
   'rsc_defaults':    M_RSCDEFAULTS,
   'resources':       M_RESOURCES,
@@ -68,6 +70,7 @@ PRIM_MODE = [PRIM_PROP,PRIM_ATTR,PRIM_OPER]
 
 # 必須列名
 RQCLM_TBL = {
+  (M_NODE,None):           ['uname','ptype','name','value'],
   (M_PROPERTY,None):       ['name','value'],
   (M_RSCDEFAULTS,None):    ['name','value'],
   (M_RESOURCES,None):      ['resourceitem','id'],
@@ -81,6 +84,7 @@ RQCLM_TBL = {
   (M_ORDER,None):          ['first-rsc','then-rsc','score']
 }
 # 非必須列名
+CLM_NODE = ['ntype']
 CLM_LOCEXPERT = ['role']
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
@@ -88,6 +92,7 @@ CLM_ORDER = ['first-action','then-action','symmetrical']
 # 種別
 RESOURCE_TYPE = ['primitive','group','clone','ms','master']
 ATTRIBUTE_TYPE = ['params','meta']
+NODE_ATTR_TYPE = ['attributes','utilization']
 # unary_op
 UNARY_OP = ['defined','not_defined']
 
@@ -97,6 +102,7 @@ SCORE_INFINITY = 'INFINITY'
 SCORE_PD_COLOCATION = SCORE_INFINITY
 # crmファイルに出力するコメント
 COMMENT_TBL = {
+  'node':         '### Cluster Node ###',
   'property':     '### Cluster Option ###',
   'rsc_defaults': '### Resource Defaults ###',
   'primitive':    '### Primitive Configuration ###',
@@ -296,7 +302,8 @@ class Crm:
         if x:
           rql.append(x)
           clm = x
-      elif (self.mode[0] == M_LOCEXPERT and clm in CLM_LOCEXPERT or
+      elif (self.mode[0] == M_NODE and clm in CLM_NODE or
+            self.mode[0] == M_LOCEXPERT and clm in CLM_LOCEXPERT or
             self.mode[0] == M_COLOCATION and clm in CLM_COLOCATION or
             self.mode[0] == M_ORDER and clm in CLM_ORDER):
         rql.append(clm)
@@ -488,7 +495,11 @@ class Crm:
     return 0
 
   def csv2xml(self,clmd,RIl,csvl):
-    if self.mode[0] == M_PROPERTY:
+    if self.mode[0] == M_NODE:
+      log.debug_l(u'クラスタ・ノード表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.skip_mode(not self.csv2xml_node(clmd,csvl))
+    elif self.mode[0] == M_PROPERTY:
       log.debug_l(u'クラスタ・プロパティ表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_option('property',clmd,csvl)
@@ -524,6 +535,77 @@ class Crm:
       log.debug_l(u'リソース起動順序制約表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_order(clmd,csvl)
+    return True
+
+  '''
+    クラスタ・ノード表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_node(self,clmd,csvl):
+    global errflg2; errflg2 = False
+    changed = False
+    uname = csvl[clmd['uname']]
+    if uname:
+      self.attrd = {}
+      self.attrd['uname'] = uname; changed = True
+    else:
+      uname = self.attrd.get('uname')
+      if not uname:
+        log.fmterr_l(u"'uname'列に値が設定されていません。")
+    ntype = ''
+    if 'ntype' in clmd:
+      ntype = csvl[clmd['ntype']]
+      if ntype and changed:
+        self.attrd['ntype'] = ntype
+      elif ntype and not changed and uname:
+        log.warn_l(u"'ntype'列に値が設定されています。")
+        ntype = self.attrd.get('ntype','')
+      elif not ntype and not changed:
+        ntype = self.attrd.get('ntype','')
+    ptype = csvl[clmd['ptype']].lower()
+    if ptype and ptype not in NODE_ATTR_TYPE:
+      log.fmterr_l(u'未定義のパラメータ種別 [ptype: %s] が設定されています。'
+                   %csvl[clmd['ptype']])
+    if not ptype:
+      ptype = self.attrd.get('ptype','')
+    name = csvl[clmd['name']]
+    value = csvl[clmd['value']]
+    if not ptype and (name or value):
+      log.fmterr_l(u"'ptype'列に値が設定されていません。")
+    self.attrd['ptype'] = ptype
+    x = self.xml_get_node(self.root,'nodes')
+    for node in self.xml_get_nodes(x,'node','uname',uname):
+      if node.getAttribute('ntype') == ntype:
+        break
+    else:
+      node = None
+    self.xml_check_nv(node,ptype,name,value)
+    if errflg2:
+      return False
+    #
+    # Example:
+    # <crm>
+    #   <nodes>
+    #     <node uname="pm01" ntype="normal">
+    #       <attributes>
+    #         <nv name="standby" value="off"/>
+    #          :
+    #       <utilization>
+    #         <nv name="capacity" value="1"/>
+    #          :
+    #
+    if not node:
+      node = self.xml_create_child(x,'node')
+      node.setAttribute('uname',uname)
+      if ntype:
+        node.setAttribute('ntype',ntype)
+    if ptype:
+      self.xml_append_nv(self.xml_get_node(node,ptype),name,value)
     return True
 
   '''
@@ -745,7 +827,6 @@ class Crm:
     #         <start>
     #           <nv name="interval" value="0s"/>
     #            :
-    #         </start>
     #         <monitor>
     #          :
     #
@@ -1268,6 +1349,7 @@ class Crm:
   '''
   def xml2crm(self):
     s = [
+      self.xml2crm_node(),
       self.xml2crm_option('property'),
       self.xml2crm_option('rsc_defaults'),
       self.xml2crm_resources(['group','clone','ms']),
@@ -1279,6 +1361,23 @@ class Crm:
     while [x for x in s if not x]:
       s.remove(None)
     return '\n'.join(s)
+
+  def xml2crm_node(self):
+    #
+    # node <uname>[:<type>]
+    #   [attributes  <param>=<value> [<param>=<value>...]]
+    #   [utilization <param>=<value> [<param>=<value>...]]
+    #
+    s = []; tag = 'node'
+    for x in self.root.getElementsByTagName(tag):
+      y = []; z = []
+      if x.getAttribute('ntype'):
+        y.append(':%s'%x.getAttribute('ntype'))
+      z.append('node %s%s'%(x.getAttribute('uname'),''.join(y)))
+      self.xml2crm_attr(x,z,NODE_ATTR_TYPE)
+      s.append(' \\\n\t'.join(z))
+    if s:
+      return '%s\n%s\n'%(COMMENT_TBL[tag],'\n'.join(s))
 
   def xml2crm_option(self,tag):
     #
@@ -1441,12 +1540,17 @@ class Crm:
     if s:
       return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
 
-  def xml2crm_attr(self,node,s):
+  def xml2crm_attr(self,node,s,nodes=None):
     #
     # params attr_list / meta attr_list
     # attr_list :: <attr>=<val> [<attr>=<val>...]
     #
-    for x in self.xml_get_childs(node,ATTRIBUTE_TYPE):
+    # attributes attr_list / utilization attr_list
+    # attr_list :: <param>=<value> [<param>=<value>...]
+    #
+    if not nodes:
+      nodes = ATTRIBUTE_TYPE
+    for x in self.xml_get_childs(node,nodes):
       for i,y in enumerate(x.childNodes):  # <nv>
         if i == 0:
           s.append(x.nodeName)
