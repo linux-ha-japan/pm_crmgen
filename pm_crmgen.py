@@ -93,6 +93,7 @@ CLM_ORDER = ['first-action','then-action','symmetrical']
 RESOURCE_TYPE = ['primitive','group','clone','ms','master']
 ATTRIBUTE_TYPE = ['params','meta']
 NODE_ATTR_TYPE = ['attributes','utilization']
+PRIM_ATTR_TYPE = ['params','meta','utilization','operations']
 # unary_op
 UNARY_OP = ['defined','not_defined']
 
@@ -721,7 +722,7 @@ class Crm:
     [引数]
       clmd : 列情報（[列名: 列番号]）を保持する辞書
       csvl : CSVファイル1行分のリスト
-      node : データ（<params>/<meta>...）を追加するNode
+      node : データ（<params>/<meta>/<utilization>/<operations>...）を追加するNode
              ※Primitiveリソース表の処理時に指定される
     [戻り値]
       True  : OK
@@ -739,9 +740,12 @@ class Crm:
         if not rscid:
           log.fmterr_l(u"'id'列に値が設定されていません。")
       node = self.xml_get_rscnode(rscid)
+      types = ATTRIBUTE_TYPE
+    else:
+      types = PRIM_ATTR_TYPE
     atype = csvl[clmd['type']].lower()
     if atype:
-      if atype in ATTRIBUTE_TYPE:
+      if atype in types:
         self.attrd['type'] = atype
       else:
         log.fmterr_l(u'未定義のパラメータ種別 [type: %s] が設定されています。'
@@ -767,6 +771,12 @@ class Crm:
     #     <primitive id="prmEx" ...>
     #       <params>
     #         <nv name="device" value="/dev/xvdb1"/>
+    #          :
+    #       <utilization>
+    #         <nv name="capacity" value="1"/>
+    #          :
+    #       <operations>
+    #         <nv name="$id" value="opEx"/>
     #          :
     #
     return self.xml_append_nv(self.xml_get_node(node,atype),name,value)
@@ -813,8 +823,10 @@ class Crm:
     # <crm>
     #   <resources>
     #     <primitive id="prmEx" class="ocf" provider="heartbeat" type="sfex">
-    #       <params>...</params>
-    #       <meta>  ...</meta>
+    #       <params>     ...</params>
+    #       <meta>       ...</meta>
+    #       <utilization>...</utilization>
+    #       <operations> ...</operations>
     #       <op>
     #         <start>
     #           <nv name="interval" value="0s"/>
@@ -1416,9 +1428,11 @@ class Crm:
       return
     #
     # primitive <rsc> [<class>:[<provider>:]]<type>
-    #   [params attr_list]
-    #   [meta   attr_list]
-    #   [op op_type [<attribute>=<value>...]...]]
+    #   [params      attr_list]
+    #   [meta        attr_list]
+    #   [utilization attr_list]
+    #   [operations  id_spec]
+    #     [op op_type [<attribute>=<value>...]...]]
     #
     s = []; tag = 'primitive'
     for p in self.rr.getElementsByTagName(tag):
@@ -1429,7 +1443,8 @@ class Crm:
         z.append(p.getAttribute('provider'))
       z.append(p.getAttribute('type'))
       y.append('primitive %s %s'%(p.getAttribute('id'),':'.join(z)))
-      self.xml2crm_attr(p,y)
+      self.xml2crm_attr(p,y,PRIM_ATTR_TYPE[:-1])
+      self.xml2crm_attr(p,y,PRIM_ATTR_TYPE[-1:])
       for o in [o for x in p.getElementsByTagName('op') for o in x.childNodes]:
         z = []
         for x in o.childNodes:  # <nv>
@@ -1533,7 +1548,7 @@ class Crm:
     #
     # params attr_list / meta attr_list
     # attr_list :: <attr>=<val> [<attr>=<val>...]
-    #
+    # /
     # attributes attr_list / utilization attr_list
     # attr_list :: <param>=<value> [<param>=<value>...]
     #
