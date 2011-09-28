@@ -88,7 +88,7 @@ RQCLM_TBL = {
 }
 # 非必須列名
 CLM_NODE = ['ntype']
-CLM_LOCEXPERT = ['role']
+CLM_LOCEXPERT = ['role','id_spec']
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
 
@@ -964,12 +964,25 @@ class Crm:
       False : NG（フォーマット・エラー）
   '''
   def csv2xml_locexpert(self,clmd,csvl):
-    def set_attr(node,names):
+    def has_idspec(tgtref):
+      if 'id_spec' in clmd:
+        x = csvl[clmd['id_spec']]
+        if not tgtref:
+          return x != ''
+        return x and x.startswith('$id-ref=') or x.startswith('id-ref=')
+      return False
+    def set_attr(node,names,tag=None,setflg=False):
+      if tag: e = None
+      else:   e = node
       for k,x in [(k,x) for (k,x) in clmd.items() if k in names and csvl[x]]:
-        node.setAttribute(k,csvl[x])
-      node.setAttribute(self.ATTR_CREATED,str(self.lineno))
+        if not e:
+          e = self.xml_create_child(node,tag)
+        e.setAttribute(k,csvl[x])
+        setflg = True
+      if setflg:
+        e.setAttribute(self.ATTR_CREATED,str(self.lineno))
     global errflg2; errflg2 = False
-    changed = False
+    changed = False; r = None
     rsc = csvl[clmd['rsc']]
     if rsc:
       self.attrd['rsc'] = rsc; changed = True
@@ -978,31 +991,36 @@ class Crm:
       if not rsc:
         log.fmterr_l(u"'rsc'列に値が設定されていません。")
     self.xml_get_rscnode(rsc)
-    x = self.score_validate(csvl[clmd['score']])
-    if x:
-      csvl[clmd['score']] = self.attrd['score'] = x
+    if (has_idspec(True) and
+        not [k for (k,x) in clmd.items() if k not in ['rsc','id_spec'] and csvl[x]]):
       r = self.doc.createElement('rule')
-    else:
-      if changed or not rsc:
-        log.fmterr_l(u"'score'列に値が設定されていません。")
+    if not r:
+      x = self.score_validate(csvl[clmd['score']])
+      if x:
+        csvl[clmd['score']] = self.attrd['score'] = x
+        r = self.doc.createElement('rule')
       else:
-        if csvl[clmd['bool_op']]:
-          log.warn_l(u"'bool_op'列に値が設定されています。")
-        if 'role' in clmd and csvl[clmd['role']]:
-          log.warn_l(u"'role'列に値が設定されています。")
-        csvl[clmd['score']] = self.attrd['score']
-      r = None
-    if not csvl[clmd['attribute']]:
-      log.fmterr_l(u"'attribute'列に値が設定されていません。")
-    if not csvl[clmd['op']]:
-      log.fmterr_l(u"'op'列に値が設定されていません。")
-    else:
-      if csvl[clmd['op']].lower() in UNARY_OP:
-        if csvl[clmd['value']]:
-          log.warn_l(u"'value'列に値が設定されています。")
+        if changed or not rsc:
+          log.fmterr_l(u"'score'列に値が設定されていません。")
+        else:
+          if csvl[clmd['bool_op']]:
+            log.warn_l(u"'bool_op'列に値が設定されています。")
+          if 'role' in clmd and csvl[clmd['role']]:
+            log.warn_l(u"'role'列に値が設定されています。")
+          if has_idspec(False):
+            log.warn_l(u"'id_spec'列に値が設定されています。")
+          csvl[clmd['score']] = self.attrd['score']
+      if not csvl[clmd['attribute']]:
+        log.fmterr_l(u"'attribute'列に値が設定されていません。")
+      if not csvl[clmd['op']]:
+        log.fmterr_l(u"'op'列に値が設定されていません。")
       else:
-        if not csvl[clmd['value']]:
-          log.fmterr_l(u"'value'列に値が設定されていません。")
+        if csvl[clmd['op']].lower() in UNARY_OP:
+          if csvl[clmd['value']]:
+            log.warn_l(u"'value'列に値が設定されています。")
+        else:
+          if not csvl[clmd['value']]:
+            log.fmterr_l(u"'value'列に値が設定されていません。")
     if errflg2:
       return False
     #
@@ -1010,7 +1028,7 @@ class Crm:
     # <crm>
     #   <locexperts>
     #     <locexpert rsc="grpPg">
-    #       <rule score="200">
+    #       <rule score="200" id_spec="$id=&quot;r1&quot;">
     #         <exp attribute="#uname" op="eq" value="pm01"/>
     #       </rule>
     #        :
@@ -1024,6 +1042,9 @@ class Crm:
     #         <exp attribute="attr1" op="ne" value="val2"/>
     #       </rule>
     #     </locexpert>
+    #     <locexpert rsc="grpPg2">
+    #       <rule id_spec="$id-ref=&quot;r1&quot;"/>
+    #        :
     #
     x = self.xml_get_node(self.root,'locexperts')
     l = self.xml_get_nodes(x,'locexpert','rsc',rsc)
@@ -1038,14 +1059,14 @@ class Crm:
       if x:
         x[0].removeAttribute(self.ATTR_STATE)
       r.setAttribute(self.ATTR_STATE,'working')
-      set_attr(r,['score','bool_op','role'])
+      set_attr(r,['score','bool_op','role','id_spec'])
       l.appendChild(r)
     x = self.xml_get_nodes(l,'rule',self.ATTR_STATE,'working')[0]
     if x.getElementsByTagName('exp') and not x.getAttribute('bool_op'):
       log.fmterr_l(u"'bool_op'列に値が設定されていません。(%s行目)"
                    %x.getAttribute(self.ATTR_CREATED))
       return False
-    set_attr(self.xml_create_child(x,'exp'),['attribute','op','value'])
+    set_attr(x,['attribute','op','value'],'exp')
     return True
 
   '''
@@ -1500,10 +1521,13 @@ class Crm:
       r = l.getAttribute('rsc')
       s.append('location rsc_location-%s-%d %s'%(r,seq+i+1,r))
       for x in l.getElementsByTagName('rule'):
-        s.append(' \\\n\trule ')
+        s.append(' \\\n\trule')
+        if x.getAttribute('id_spec'):
+          s.append(' %s'%x.getAttribute('id_spec'))
         if x.getAttribute('role'):
-          s.append('$role="%s" '%x.getAttribute('role'))
-        s.append('%s: '%x.getAttribute('score'))
+          s.append(' $role="%s"'%x.getAttribute('role'))
+        if x.getAttribute('score'):
+          s.append(' %s: '%x.getAttribute('score'))
         z = []
         for y in x.getElementsByTagName('exp'):
           o = y.getAttribute('op')
