@@ -1,0 +1,9 @@
+ * RHEL5の環境でRPMをビルドする場合は、以下のマクロファイルを作成してください。
+
+[root@x3650a ~]# cat /etc/rpm/macros.dist 
+# dist macros.
+
+%rhel 5
+%dist .el5
+%el5 1
+[root@x3650a ~]#

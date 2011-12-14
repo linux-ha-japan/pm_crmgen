@@ -3,8 +3,8 @@
 ########################################
 %define __check_files %{nil}
 %define name pm_crmgen
-%define version 1.1
-%define release 1.el@RHEL_VER@
+%define version 1.2
+%define release 1
 %define prefix /usr
 %define ORGARCH %{name}-%{version}
 #
@@ -13,7 +13,7 @@
 Summary: Pacemaker crm-file generator
 Name: %{name}
 Version: %{version}
-Release: %{release}
+Release: %{release}%{?dist}
 Group: Applications
 Source: %{ORGARCH}.tar.gz
 License: GPL

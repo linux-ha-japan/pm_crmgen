@@ -169,7 +169,7 @@ class Crm:
   '''
   def optionParser(self):
     usage = '%prog [options] CSV_FILE'
-    version = '1.1'
+    version = '1.2'
     description = "  character encoding of supported CSV_FILE are 'UTF-8' and 'Shift_JIS'"
     prog = 'pm_crmgen'
     p = OptionParser(usage=usage,version=version,description=description,prog=prog)
@@ -1756,18 +1756,18 @@ class Log:
     ・要素の前後の全半角空白/タブ/改行を削除
     ・文字列中の改行を半角空白に置換
   [引数]
-    list     : 変換対象のリスト
+    tl       : 変換対象のリスト
     encoding : `encoding' -> Unicode に変換
   [戻り値]
     True  : OK
     False : NG
 '''
-def unicode_listitem(list,encoding):
-  for i,data in [(i,x) for (i,x) in enumerate(list) if x]:
+def unicode_listitem(tl,encoding):
+  for i,data in [(i,x) for (i,x) in enumerate(tl) if x]:
     while data.count('\n\n'):
       data = data.replace('\n\n','\n')
     try:
-      list[i] = del_blank(unicode(data.replace('\n',' '),encoding))
+      tl[i] = del_blank(unicode(data.replace('\n',' '),encoding))
     except:
       log.error(u'データのUnicodeへの変換に失敗しました。')
       return False
