@@ -10,12 +10,13 @@ crmgenlinkdir		= /usr/bin
 
 SPEC			= $(PACKAGE_NAME).spec
 TARFILE			= $(PACKAGE_NAME)-$(VERSION).tar.gz
-EXTRA_DIST		= $(crmgen_SCRIPTS) $(crmgen_DATA) $(SPEC) autogen.sh
+EXTRA_DIST		= $(crmgen_SCRIPTS) $(crmgen_DATA) $(SPEC) autogen.sh adduuid
 
 install-data-hook:
 	@$(NORMAL_INSTALL)
 	test -z $(crmgendir) || $(mkdir_p) $(DESTDIR)$(crmgendir)
 	$(INSTALL_SCRIPT) $(crmgen_SCRIPTS) $(DESTDIR)$(crmgendir)
+	$(INSTALL_SCRIPT) adduuid $(DESTDIR)$(crmgendir)
 	$(INSTALL_DATA) $(crmgen_DATA) $(DESTDIR)$(crmgendir)
 	test -z $(crmgenlinkdir) || $(mkdir_p) $(DESTDIR)$(crmgenlinkdir)
 	ln -sf $(crmgendir)/$(crmgen_SCRIPTS) $(DESTDIR)$(crmgenlinkdir)/pm_crmgen

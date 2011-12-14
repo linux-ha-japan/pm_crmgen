@@ -1,0 +1,41 @@
+#!/bin/sh
+
+HOSTCACHE=/var/lib/heartbeat/hostcache
+usage() {
+    echo "Usage: $0 <crm-file> [<hostcache (default:$HOSTCACHE)>]"
+    exit 1
+}
+if [ $# -eq 0 ]; then
+    usage
+fi
+if [ ! -f $1 ]; then
+    usage
+fi
+if [ $# -ge 2 ]; then
+    if [ ! -f $2 ]; then
+        usage
+    fi
+    HOSTCACHE=$2
+fi
+
+SCRIPT=/tmp/`basename $0`.script
+HCACHE=/tmp/`basename $0`.hcache
+OUTPUT=`basename ${1%.*}-uuid.crm`
+
+sed 's/\([.*\]\)/\\\1/g' $HOSTCACHE >$HCACHE || { rc=$?;rm $HCACHE 2>/dev/null;exit $rc; }
+
+echo 'set -e' >$SCRIPT &&
+awk -v o=$OUTPUT '{if(NF==3)printf("sed \047s/^[[:blank:]]*node[[:blank:]]\\+%s\\([[:blank:]:]\\)/node $id=\"%s\" %s\\1/\047 -i %s\n",$1,$2,$1,o);}' $HCACHE >>$SCRIPT &&
+awk -v o=$OUTPUT '{if(NF==3)printf("sed \047s/^[[:blank:]]*node[[:blank:]]\\+%s$/node $id=\"%s\" %s/\047 -i %s\n",$1,$2,$1,o);}' $HCACHE >>$SCRIPT &&
+cp -p $1 $OUTPUT && /bin/sh $SCRIPT; rc=$?
+rm $SCRIPT $HCACHE 2>/dev/null
+
+if [ $rc -eq 0 ]; then
+    cnt=$(egrep '^[[:blank:]]*node[[:blank:]]' $OUTPUT | grep -cv '[[:blank:]]$id="' 2>/dev/null)
+    if [ $cnt -gt 0 ]; then
+        no=$(egrep -n '^[[:blank:]]*node[[:blank:]]' $OUTPUT | grep -v '[[:blank:]]$id="' | perl -pe 's/:.*\n/,/')
+        echo "ノード名に対応するuuidが存在しません。($OUTPUTの${no%,}行目を確認してください。)"
+        rc=1
+    fi
+fi
+exit $rc
