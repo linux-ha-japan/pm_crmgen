@@ -3,7 +3,7 @@
 ########################################
 %define __check_files %{nil}
 %define name pm_crmgen
-%define version 1.2
+%define version 1.3
 %define release 1
 %define prefix /usr
 %define ORGARCH %{name}-%{version}
