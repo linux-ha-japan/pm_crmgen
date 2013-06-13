@@ -22,7 +22,6 @@ BuildRoot: %{_tmppath}/%{name}
 BuildRequires: make
 BuildArch: noarch
 Requires: python >= 2.4, python < 3.0
-Requires: pacemaker >= 1.0.9
 
 ########################################
 %description
