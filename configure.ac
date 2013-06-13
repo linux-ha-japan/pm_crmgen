@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT(pm_crmgen, 1.3)
-AM_INIT_AUTOMAKE(pm_crmgen, 1.3)
+AC_INIT(pm_crmgen, 1.4)
+AM_INIT_AUTOMAKE(pm_crmgen, 1.4)
 
 # Checks for programs.
 AC_PROG_LN_S

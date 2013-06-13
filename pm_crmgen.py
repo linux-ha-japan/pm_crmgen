@@ -169,7 +169,7 @@ class Crm:
   '''
   def optionParser(self):
     usage = '%prog [options] CSV_FILE'
-    version = '1.3'
+    version = '1.4'
     description = "  character encoding of supported CSV_FILE are 'UTF-8' and 'Shift_JIS'"
     prog = 'pm_crmgen'
     p = OptionParser(usage=usage,version=version,description=description,prog=prog)
@@ -407,7 +407,7 @@ class Crm:
       fd = open(self.input,'rU')
     except Exception,msg:
       log.error(u'ファイルのオープンに失敗しました。[%s]'%self.input)
-      log.info(msg)
+      log.error(msg)
       return 1
     try:
       code_infile = detect_char(fd.read())
@@ -418,7 +418,7 @@ class Crm:
       csvReader = csv.reader(fd)
     except Exception,msg:
       log.error(u'ファイルの読み込みに失敗しました。[%s]'%self.input)
-      log.info(msg)
+      log.error(msg)
       return 1
     while True:
       try:
@@ -428,7 +428,7 @@ class Crm:
         break  # 終端
       except Exception,msg:
         log.error(u'ファイルの読み込みに失敗しました。[%s]'%self.input)
-        log.info(msg)
+        log.error(msg)
         return 1
       if not unicode_listitem(csvl,code_infile):
         fd.close()
@@ -477,7 +477,7 @@ class Crm:
       fd.close()
     except Exception,msg:
       log.error(u'ファイルのクローズに失敗しました。[%s]'%self.input)
-      log.info(msg)
+      log.error(msg)
       return 1
     if self.root.hasChildNodes():
       self.xml_debug()
@@ -1613,27 +1613,27 @@ class Crm:
         sys.stdout.write(string)
       except Exception,msg:
         log.error(u'crmコマンドの出力に失敗しました。[標準出力]')
-        log.info(msg)
+        log.error(msg)
         return False
     else:
       try:
         fd = codecs.open(self.output,'w',CODE_OUTFILE)
       except Exception,msg:
         log.error(u'ファイルのオープンに失敗しました。[%s]'%self.output)
-        log.info(msg)
+        log.error(msg)
         return False
       try:
         fd.write(string)
       except Exception,msg:
         log.error(u'crmファイルの出力に失敗しました。[%s]'%self.output)
-        log.info(msg)
+        log.error(msg)
         os.unlink(self.output)
         return False
       try:
         fd.close()
       except Exception,msg:
         log.error(u'ファイルのクローズに失敗しました。[%s]'%self.output)
-        log.info(msg)
+        log.error(msg)
         return False
     return True
 
@@ -1690,6 +1690,11 @@ class Log:
   def warn_l(self,msg):
     self.print2e(self.WARN,msg,self.printitem_file,self.printitem_lineno)
 
+  def notice(self,msg):
+    self.print2e(self.NOTICE,msg)
+  def notice_l(self,msg):
+    self.print2e(self.NOTICE,msg,self.printitem_file,self.printitem_lineno)
+
   def info(self,msg):
     self.print2e(self.INFO,msg)
   def info_f(self,msg):
@@ -1716,11 +1721,11 @@ class Log:
   def fmterr_f(self,info=None):
     self.error_f(self.fmterrmsg)
     if info:
-      self.info_f(info)
+      self.error_f(info)
   def fmterr_l(self,info=None):
     self.error_l(self.fmterrmsg)
     if info:
-      self.info_l(info)
+      self.error_l(info)
 
   def quitmsg(self,ret):
     if ret == 1:
@@ -1741,7 +1746,7 @@ class Log:
       level = k + ' ' * (self.level_maxlen - len(k))
     if file:
       if lineno:
-        sys.stderr.write('%s: %s(%s): %s\n'%(level,file,lineno,msg))
+        sys.stderr.write('%s: %s(L%s): %s\n'%(level,file,lineno,msg))
       else:
         sys.stderr.write('%s: %s: %s\n'%(level,file,msg))
     else:
