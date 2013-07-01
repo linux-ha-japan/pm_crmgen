@@ -82,5 +82,4 @@ true
 %dir %{gendir}
 %{gendir}/pm_crmgen.py
 %{gendir}/pm_crmgen_env.xls
-%{gendir}/adduuid
 %{prefix}/bin/pm_crmgen
