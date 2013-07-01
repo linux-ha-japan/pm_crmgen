@@ -48,19 +48,25 @@ M_LOCATION    = 'Location'
 M_LOCEXPERT   = 'LocExpert'
 M_COLOCATION  = 'Colocation'
 M_ORDER       = 'Order'
+M_FTOPO       = 'FTopo'
+M_TICKET      = 'Ticket'
+M_CONFIG      = 'Config'
 # {表ヘッダ文字列: 内部モード識別子}
 MODE_TBL = {
-  'node':            M_NODE,
-  'property':        M_PROPERTY,
-  'rsc_defaults':    M_RSCDEFAULTS,
-  'op_defaults':     M_OPDEFAULTS,
-  'resources':       M_RESOURCES,
-  'rsc_attributes':  M_ATTRIBUTES,
-  'primitive':       M_PRIMITIVE,
-  'location':        M_LOCATION,
-  'location_expert': M_LOCEXPERT,
-  'colocation':      M_COLOCATION,
-  'order':           M_ORDER
+  'node':              M_NODE,
+  'property':          M_PROPERTY,
+  'rsc_defaults':      M_RSCDEFAULTS,
+  'op_defaults':       M_OPDEFAULTS,
+  'resources':         M_RESOURCES,
+  'rsc_attributes':    M_ATTRIBUTES,
+  'primitive':         M_PRIMITIVE,
+  'location':          M_LOCATION,
+  'location_expert':   M_LOCEXPERT,
+  'colocation':        M_COLOCATION,
+  'order':             M_ORDER,
+  'fencing_topology':  M_FTOPO,
+  'rsc_ticket':        M_TICKET,
+  'additional_config': M_CONFIG
 }
 M_SKIP = 'skip'     # 次の表ヘッダまでスキップ
 
@@ -84,13 +90,17 @@ RQCLM_TBL = {
   (M_LOCATION,None):       ['rsc'],
   (M_LOCEXPERT,None):      ['rsc','score','bool_op','attribute','op','value'],
   (M_COLOCATION,None):     ['rsc','with-rsc','score'],
-  (M_ORDER,None):          ['first-rsc','then-rsc','score']
+  (M_ORDER,None):          ['first-rsc','then-rsc','score'],
+  (M_FTOPO,None):          ['node','rsc','index'],
+  (M_TICKET,None):         ['ticket','rsc'],
+  (M_CONFIG,None):         ['config']
 }
 # 非必須列名
 CLM_NODE = ['ntype']
 CLM_LOCEXPERT = ['role','id_spec']
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
+CLM_TICKET = ['role','loss-policy']
 
 # 種別
 RESOURCE_TYPE = ['primitive','group','clone','ms','master']
@@ -116,7 +126,10 @@ COMMENT_TBL = {
   'ms':           '### Master/Slave Configuration ###',
   'location':     '### Resource Location ###',
   'colocation':   '### Resource Colocation ###',
-  'order':        '### Resource Order ###'
+  'order':        '### Resource Order ###',
+  'ftopo':        '### Fencing Topology ###',
+  'ticket':       '### Resource Ticket ###',
+  'config':       '### Additional Config ###'
 }
 
 # エラー/警告が発生した場合、Trueに設定する
@@ -169,7 +182,7 @@ class Crm:
   '''
   def optionParser(self):
     usage = '%prog [options] CSV_FILE'
-    version = '1.4'
+    version = '2.0'
     description = "  character encoding of supported CSV_FILE are 'UTF-8' and 'Shift_JIS'"
     prog = 'pm_crmgen'
     p = OptionParser(usage=usage,version=version,description=description,prog=prog)
@@ -307,7 +320,8 @@ class Crm:
       elif (self.mode[0] == M_NODE and clm in CLM_NODE or
             self.mode[0] == M_LOCEXPERT and clm in CLM_LOCEXPERT or
             self.mode[0] == M_COLOCATION and clm in CLM_COLOCATION or
-            self.mode[0] == M_ORDER and clm in CLM_ORDER):
+            self.mode[0] == M_ORDER and clm in CLM_ORDER or
+            self.mode[0] == M_TICKET and clm in CLM_TICKET):
         rql.append(clm)
       if clm not in clmd:
         clmd[clm] = i
@@ -423,14 +437,16 @@ class Crm:
     while True:
       try:
         self.lineno = log.printitem_lineno = self.lineno + 1
-        csvl = csvReader.next()
+        csvlr = csvReader.next()
+        csvl = csvlr[:]
       except StopIteration:
         break  # 終端
       except Exception,msg:
         log.error(u'ファイルの読み込みに失敗しました。[%s]'%self.input)
         log.error(msg)
         return 1
-      if not unicode_listitem(csvl,code_infile):
+      if (not unicode_listitem(csvl,code_infile,True) or
+          not unicode_listitem(csvlr,code_infile,False)):
         fd.close()
         return 1
       if not self.line_validate(csvl):
@@ -465,7 +481,7 @@ class Crm:
         return 1
       if not self.line_validate(csvl,clmd,RIl):
         continue
-      if not self.csv2xml(clmd,RIl,csvl):
+      if not self.csv2xml(clmd,RIl,csvl,csvlr):
         break
     if not errflg:
       self.xml_check_resources()
@@ -491,7 +507,7 @@ class Crm:
       return 2
     return 0
 
-  def csv2xml(self,clmd,RIl,csvl):
+  def csv2xml(self,clmd,RIl,csvl,csvlr):
     if self.mode[0] == M_NODE:
       log.debug_l(u'クラスタ・ノード表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
@@ -536,6 +552,18 @@ class Crm:
       log.debug_l(u'リソース起動順序制約表のデータを処理します。')
       self.debug_input(clmd,RIl,csvl)
       self.csv2xml_order(clmd,csvl)
+    elif self.mode[0] == M_FTOPO:
+      log.debug_l(u'STONITHの実行順序表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.csv2xml_ftopo(clmd,csvl)
+    elif self.mode[0] == M_TICKET:
+      log.debug_l(u'リソースチケット制約表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.csv2xml_ticket(clmd,csvl)
+    elif self.mode[0] == M_CONFIG:
+      log.debug_l(u'追加設定表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvlr)
+      self.csv2xml_config(clmd,csvlr)
     return True
 
   '''
@@ -1149,6 +1177,109 @@ class Crm:
     return True
 
   '''
+    STONITHの実行順序表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_ftopo(self,clmd,csvl):
+    global errflg2; errflg2 = False
+    node = csvl[clmd['node']]
+    if node:
+      self.attrd = {}
+      self.attrd['node'] = node
+    else:
+      node = self.attrd.get('node')
+    rsc = csvl[clmd['rsc']]
+    if not rsc:
+      log.fmterr_l(u"'rsc'列に値が設定されていません。")
+    idx = csvl[clmd['index']]
+    if not idx:
+      log.fmterr_l(u"'index'列に値が設定されていません。")
+    elif not idx.isdigit() or int(idx) < 1:
+      log.fmterr_l(
+        u'無効な値 [%s](%s) が設定されています。'%(idx,pos2clm(clmd['index'])))
+    self.xml_get_rscnode(rsc,'primitive')
+    if errflg2:
+      return False
+    #
+    # Example:
+    # <crm>
+    #   <ftopos>
+    #     <ftopo node="pm01" rsc="f1-1" index="1"/>
+    #     <ftopo node="pm01" rsc="f1-2" index="1"/>
+    #     <ftopo node="pm01" rsc="f1-3" index="2"/>
+    #      :
+    #   </ftopos>
+    #
+    f = self.xml_create_child(self.xml_get_node(self.root,'ftopos'),'ftopo')
+    if node:
+      f.setAttribute('node',node)
+    f.setAttribute('rsc',rsc)
+    f.setAttribute('index',idx)
+    return True
+
+  '''
+    リソースチケット制約表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_ticket(self,clmd,csvl):
+    global errflg2; errflg2 = False
+    for x in [x for x in RQCLM_TBL[M_TICKET,None] if not csvl[clmd[x]]]:
+      log.fmterr_l(u"'%s'列に値が設定されていません。"%x)
+    self.xml_get_rscnode(csvl[clmd['rsc']])
+    if errflg2:
+      return False
+    #
+    # Example:
+    # <crm>
+    #   <tickets>
+    #     <ticket id="ticketA" rsc="A" role="..." loss-policy="..."/>
+    #   </tickets>
+    #
+    t = self.xml_create_child(self.xml_get_node(self.root,'tickets'),'ticket')
+    for k,x in [(k,x) for (k,x) in clmd.items() if csvl[x]]:
+      t.setAttribute(k,csvl[x])
+    return True
+
+  '''
+    追加設定表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_config(self,clmd,csvl):
+    def del_r_blank(string):
+      s = string.rstrip().rstrip(u'　')
+      if string == s:
+        return s
+      return del_r_blank(s)
+    l = csvl[clmd['config']].split('\n')
+    for (i,x) in enumerate(l):
+      l[i] = del_r_blank(del_r_blank(x).rstrip('\\'))
+    #
+    # Example:
+    # <crm>
+    #   <configs>
+    #     <config data="..."/>
+    #   </configs>
+    #
+    self.xml_create_child(self.xml_get_node(self.root,'configs'),'config'
+      ).setAttribute('data',' \\\n'.join(l))
+    return True
+
+  '''
     制約データのXML化が必要かチェック（重複設定値の有無をチェック）
     ->配置制約表データ（pindg/diskd）から生成する同居・起動順序制約について、
       同じ制約は生成しない
@@ -1391,6 +1522,9 @@ class Crm:
       self.xml2crm_location(),
       self.xml2crm_colocation(),
       self.xml2crm_order(),
+      self.xml2crm_ftopo(),
+      self.xml2crm_ticket(),
+      self.xml2crm_config()
     ]
     while [x for x in s if not x]:
       s.remove(None)
@@ -1583,6 +1717,63 @@ class Crm:
     if s:
       return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
 
+  def xml2crm_ftopo(self):
+    #
+    # fencing_topology
+    #   [<node>:] <rsc>[,<rsc>...] [<rsc>[,<rsc>...] ...]
+    #   [[<node>:] <rsc>[,<rsc>...] [<rsc>[,<rsc>...] ...]]
+    #
+    tag = 'ftopo'; ftopos = []
+    for x in self.root.getElementsByTagName(tag):
+      ftopos.append(
+        (x.getAttribute('node'),x.getAttribute('rsc'),x.getAttribute('index')))
+    if len(ftopos) == 0:
+      return
+    ftopos.sort(key=lambda ftopo: ftopo[2])  #      sort by 'index' first,
+    ftopos.sort(key=lambda ftopo: ftopo[0])  # then sort by 'node'
+    s = []; z = []; node = ''; idx = ''
+    s.append('fencing_topology')
+    for x in ftopos:
+      if node != x[0] or not idx:
+        z.append(' \\\n\t')
+      if node != x[0]:
+        node = x[0]; idx = ''
+        z.append('%s: '%node)
+      if idx != x[2]:
+        if idx:
+          z.append(' ')
+        idx = x[2]
+      else:
+        z.append(',')
+      z.append('%s'%x[1])
+    s.append(''.join(z))
+    return '%s\n%s\n'%(COMMENT_TBL[tag],''.join(s))
+
+  def xml2crm_ticket(self):
+    #
+    # rsc_ticket <id> <ticket_id>: <rsc>[:<role>]
+    #   [loss-policy=<loss_policy_action>]
+    #
+    s = []; tag = 'ticket'
+    for i,x in enumerate(self.root.getElementsByTagName(tag)):
+      t = x.getAttribute('ticket')
+      r = x.getAttribute('rsc')
+      s.append('rsc_ticket rsc_ticket-%s-%d %s: %s'%(t,i+1,t,r))
+      if x.getAttribute('role'):
+        s.append(':%s'%x.getAttribute('role'))
+      if x.getAttribute('loss-policy'):
+        s.append(' loss-policy=%s'%x.getAttribute('loss-policy'))
+      s.append('\n')
+    if s:
+      return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
+
+  def xml2crm_config(self):
+    s = []; tag = 'config'
+    for x in self.root.getElementsByTagName(tag):
+      s.append('%s\n'%x.getAttribute('data'))
+    if s:
+      return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
+
   def xml2crm_attr(self,node,s,nodes=None):
     #
     # params attr_list / meta attr_list
@@ -1758,21 +1949,26 @@ class Log:
 
 '''
   リスト（要素）の文字コードをUnicodeに変換
-    ・要素の前後の全半角空白/タブ/改行を削除
-    ・文字列中の改行を半角空白に置換
+    ・要素の前後の全半角空白/タブ/改行を削除(※)
+    ・文字列中の改行を半角空白に置換(※)
   [引数]
     tl       : 変換対象のリスト
     encoding : `encoding' -> Unicode に変換
+    do_fmt   : ※の処理を行うか
   [戻り値]
     True  : OK
     False : NG
 '''
-def unicode_listitem(tl,encoding):
+def unicode_listitem(tl,encoding,do_fmt):
   for i,data in [(i,x) for (i,x) in enumerate(tl) if x]:
-    while data.count('\n\n'):
-      data = data.replace('\n\n','\n')
+    if do_fmt:
+      while data.count('\n\n'):
+        data = data.replace('\n\n','\n')
     try:
-      tl[i] = del_blank(unicode(data.replace('\n',' '),encoding))
+      if do_fmt:
+        tl[i] = del_blank(unicode(data.replace('\n',' '),encoding))
+      else:
+        tl[i] = unicode(data,encoding)
     except:
       log.error(u'データのUnicodeへの変換に失敗しました。')
       return False
