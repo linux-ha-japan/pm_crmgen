@@ -112,7 +112,7 @@ UNARY_OP = ['defined','not_defined']
 
 # INFINITYを示す文字列（出力時に使用）
 SCORE_INFINITY = 'INFINITY'
-# pingd/diskd使用時に生成するcolocationのスコア値
+# ping[d]/diskd使用時に生成するcolocationのスコア値
 SCORE_PD_COLOCATION = SCORE_INFINITY
 # crmファイルに出力するコメント
 COMMENT_TBL = {
@@ -190,7 +190,7 @@ class Crm:
       help='output generated crm-file to the named file (default: stdout)')
     p.add_option('-V',action='count',dest='loglevel',default=Log.ERROR,
       help='turn on debug info. additional instances increase verbosity')
-    s = ' related to the pingd/diskd (in LOCATION table) is NOT generated'
+    s = ' related to the ping[d]/diskd (in LOCATION table) is NOT generated'
     p.add_option('-C',action='store_false',dest='add_colocation',default=True,
       help='colocation constraint' + s)
     p.add_option('-O',action='store_false',dest='add_order',default=True,
@@ -280,6 +280,8 @@ class Crm:
       x = clm.split(':')
       if clm.lower().startswith('score:') and len(x) == 2 and x[1]:
         return 'score:%s'%self.score_validate(x[1])
+      elif clm.lower().startswith('ping:') and len(x) == 3 and x[1] and x[2]:
+        return 'ping:%s:%s'%(x[1],x[2])
       elif clm.lower().startswith('pingd:') and len(x) == 3 and x[1] and x[2]:
         return 'pingd:%s:%s'%(x[1],x[2])
       elif clm.lower().startswith('diskd:') and len(x) == 2 and x[1]:
@@ -803,7 +805,7 @@ class Crm:
     # Example:
     # <crm>
     #   <resources>
-    #     <clone id="clnPingd" ...>
+    #     <clone id="clnPing" ...>
     #       <meta>
     #         <nv name="clone-max" value="2"/>
     #          :
@@ -919,7 +921,7 @@ class Crm:
     #     <location rsc="grpPg">
     #       <rule type="uname" score="200" node="pm01"/>
     #       <rule type="uname" score="100" node="pm02"/>
-    #       <rule type="pingd" score="-INFINITY" attr="default_ping_set" value="100"/>
+    #       <rule type="ping"  score="-INFINITY" attr="default_ping_set" value="100"/>
     #       <rule type="diskd" score="-INFINITY" attr="diskcheck_status"/>
     #       <rule type="diskd" score="-INFINITY" attr="diskcheck_status_internal"/>
     #     </location>
@@ -935,12 +937,13 @@ class Crm:
         for node in csvl[x].split():
           attr = {'type':'uname','score':k.split(':')[1],'node':node}
           set_attr((l,attr,x))
-      elif (k.startswith('pingd:') or k.startswith('diskd:')) and csvl[x]:
+      elif (k.startswith('ping:') or k.startswith('pingd:') or
+            k.startswith('diskd:')) and csvl[x]:
         if self.bool_validate(csvl[x],x) != 'true':
           continue
         k = k.split(':')
         attr = {'type':k[0],'score':'-%s'%SCORE_INFINITY,'attr':k[1]}
-        if k[0] == 'pingd':
+        if k[0].startswith('ping'):
           attr['value'] = k[2]
         if (not set_attr((l,attr,x)) or
             not self.add_colocation and not self.add_order):
@@ -1123,7 +1126,7 @@ class Crm:
     # Example:
     # <crm>
     #   <colocations>
-    #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnPingd"/>
+    #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnPing"/>
     #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnDiskd1"/>
     #     <colocation score="INFINITY" rsc="grpPg" with-rsc="clnDiskd2"/>
     #   </colocations>
@@ -1165,7 +1168,7 @@ class Crm:
     # Example:
     # <crm>
     #   <orders>
-    #     <order score="0" first-rsc="clnPingd"  then-rsc="grpPg" symmetrical="false"/>
+    #     <order score="0" first-rsc="clnPing"   then-rsc="grpPg" symmetrical="false"/>
     #     <order score="0" first-rsc="clnDiskd1" then-rsc="grpPg" symmetrical="false"/>
     #     <order score="0" first-rsc="clnDiskd2" then-rsc="grpPg" symmetrical="false"/>
     #   </orders>
@@ -1451,9 +1454,9 @@ class Crm:
 
   '''
     指定されたパラメータ(*)を持つPrimitiveリソースの最上位親リソースのidを取得
-    (*) pingdの「name="name" value="default_ping_set"」など
+    (*) ping[d]の「name="name" value="default_ping_set"」など
     [引数]
-      type  : <primitive type="aaa" ...>のtypeの値（{pingd|diskd}）
+      type  : <primitive type="aaa" ...>のtypeの値（{ping[d]|diskd}）
       tag   : <primitive ...><tag><nv .../>のtag（attribute種別 {params|meta}）
       name  : <primitive ...><tag><nv name="yyy" value="zzz"/>のnameの値
       value : <primitive ...><tag><nv name="yyy" value="zzz"/>のvalueの値
@@ -1642,10 +1645,10 @@ class Crm:
         t = x.getAttribute('type')
         if t == 'uname':
           s.append('#uname eq %s'%x.getAttribute('node'))
-        elif t in ['pingd','diskd']:
+        elif t in ['ping','pingd','diskd']:
           a = x.getAttribute('attr')
           s.append('not_defined %s or %s '%(a,a))
-          if t == 'pingd':
+          if t.startswith('ping'):
             s.append('lt %s'%x.getAttribute('value'))
           elif t == 'diskd':
             s.append('eq ERROR')
