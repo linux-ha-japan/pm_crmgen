@@ -1521,11 +1521,11 @@ class Crm:
       self.xml2crm_option('rsc_defaults'),
       self.xml2crm_option('op_defaults'),
       self.xml2crm_resources(['group','clone','ms']),
+      self.xml2crm_ftopo(),
       self.xml2crm_primitive(),
       self.xml2crm_location(),
       self.xml2crm_colocation(),
       self.xml2crm_order(),
-      self.xml2crm_ftopo(),
       self.xml2crm_ticket(),
       self.xml2crm_config()
     ]
