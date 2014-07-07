@@ -3,8 +3,7 @@
 
 AC_PREREQ(2.59)
 AC_INIT(pm_crmgen, 2.0)
-dnl Older distros may need: AM_INIT_AUTOMAKE($PACKAGE_NAME, $PACKAGE_VERSION)
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE(pm_crmgen, 2.0)
 
 # Checks for programs.
 AC_PROG_LN_S
