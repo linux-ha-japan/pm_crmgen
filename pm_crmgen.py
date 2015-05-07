@@ -97,6 +97,7 @@ RQCLM_TBL = {
 }
 # 非必須列名
 CLM_NODE = ['ntype']
+CLM_PRIM_ATTR = ['rule']
 CLM_LOCEXPERT = ['role','id_spec']
 CLM_COLOCATION = ['rsc-role','with-rsc-role']
 CLM_ORDER = ['first-action','then-action','symmetrical']
@@ -320,6 +321,7 @@ class Crm:
           rql.append(x)
           clm = x
       elif (self.mode[0] == M_NODE and clm in CLM_NODE or
+            self.mode[1] == PRIM_ATTR and clm in CLM_PRIM_ATTR or
             self.mode[0] == M_LOCEXPERT and clm in CLM_LOCEXPERT or
             self.mode[0] == M_COLOCATION and clm in CLM_COLOCATION or
             self.mode[0] == M_ORDER and clm in CLM_ORDER or
@@ -788,6 +790,8 @@ class Crm:
     if atype:
       if atype in types:
         self.attrd['type'] = atype
+        if 'rule' in clmd:
+          self.attrd['rule'] = csvl[clmd['rule']]
       else:
         log.fmterr_l(u'未定義のパラメータ種別 [type: %s] が設定されています。'
                      %csvl[clmd['type']])
@@ -798,7 +802,15 @@ class Crm:
         atype = self.attrd['type']
     name = csvl[clmd['name']]
     value = csvl[clmd['value']]
-    self.xml_check_nv(node,atype,name,value)
+    x = None
+    rule = self.attrd.get('rule','')
+    if rule:
+      if node.getElementsByTagName(atype):
+        rules = self.xml_get_nodes(node.getElementsByTagName(atype)[0],'rule','data',rule)
+        if rules: x = rules[0]
+      self.xml_check_nv_in_rule(x,name,value,node.getAttribute('id'),atype)
+    else:
+      self.xml_check_nv(node,atype,name,value)
     if errflg2:
       return False
     #
@@ -811,6 +823,9 @@ class Crm:
     #          :
     #     <primitive id="prmEx" ...>
     #       <params>
+    #         <rule data="...">
+    #           <nv name="device" value="/dev/xvdb0"/>
+    #         </rule>
     #         <nv name="device" value="/dev/xvdb1"/>
     #          :
     #       <utilization>
@@ -820,7 +835,12 @@ class Crm:
     #         <nv name="$id" value="opEx"/>
     #          :
     #
-    return self.xml_append_nv(self.xml_get_node(node,atype),name,value)
+    if not x:
+      x = self.xml_get_node(node,atype)
+      if rule:
+        x = self.xml_create_child(x,'rule')
+        x.setAttribute('data',rule)
+    return self.xml_append_nv(x,name,value)
 
   '''
     Primitiveリソース表データのXML化
@@ -853,6 +873,9 @@ class Crm:
       log.fmterr_l(u'Primitiveリソース表の定義が正しくありません。')
     elif self.mode[1] != PRIM_PROP and not self.pr:
       log.fmterr_l(u"表に「リソースID」('id'列に値) が設定されていません。")
+    elif self.mode[1] == PRIM_ATTR:
+      if 'rule' in clmd and csvl[clmd['rule']] and not csvl[clmd['type']]:
+        log.fmterr_l(u"'type'列に値が設定されていません。")
     elif self.mode[1] == PRIM_OPER:
       optype = csvl[clmd['type']]
       if not optype:
@@ -1372,6 +1395,7 @@ class Crm:
       return
     if not name:
       log.fmterr_l(u"'name'列に値が設定されていません。")
+      return
     if not value:
       log.info_l(u"'value'列に値が設定されていません。")
     if not node or not tag:
@@ -1383,6 +1407,34 @@ class Crm:
       s = u''
       if node.getAttribute('id'):
         s = u'。%sの%sパラメータ'%(node.getAttribute('id'),tag)
+      log.warn_l(u"項目 ('name'列%s) の値 [%s] は既に設定されています。(%s行目)"
+                 %(s,name,x.getAttribute(self.ATTR_CREATED)))
+      break
+
+  '''
+    name列とvalue列の値のチェック - Primitive表の'rule'用
+    [引数]
+      node  : 対象Node
+      name  : name列の値
+      value : value列の値
+      id    : 対象リソースのid
+      atype : attribute種別 {params|meta}
+    [戻り値]
+      なし（結果はerrflg*を参照のこと）
+  '''
+  def xml_check_nv_in_rule(self,node,name,value,id,atype):
+    if not name and not value:
+      return
+    if not name:
+      log.fmterr_l(u"'name'列に値が設定されていません。")
+      return
+    if not value:
+      log.info_l(u"'value'列に値が設定されていません。")
+    if not node:
+      return
+    x = node.childNodes
+    for x in [y for y in x if y.getAttribute('name') == name]:
+      s = u'。%sの%sパラメータ'%(id,atype)
       log.warn_l(u"項目 ('name'列%s) の値 [%s] は既に設定されています。(%s行目)"
                  %(s,name,x.getAttribute(self.ATTR_CREATED)))
       break
@@ -1616,7 +1668,7 @@ class Crm:
         z.append(p.getAttribute('provider'))
       z.append(p.getAttribute('type'))
       y.append('primitive %s %s'%(p.getAttribute('id'),':'.join(z)))
-      self.xml2crm_attr(p,y,PRIM_ATTR_TYPE[:-1])
+      self.xml2crm_attr_with_rule(p,y,PRIM_ATTR_TYPE[:-1])
       self.xml2crm_attr(p,y,PRIM_ATTR_TYPE[-1:])
       for o in [o for x in p.getElementsByTagName('op') for o in x.childNodes]:
         z = []
@@ -1791,6 +1843,25 @@ class Crm:
       for i,y in enumerate(x.childNodes):  # <nv>
         if i == 0:
           s.append(x.nodeName)
+        s.append('\t%s="%s"'%(y.getAttribute('name'),y.getAttribute('value')))
+
+  def xml2crm_attr_with_rule(self,node,s,nodes):
+    #
+    # params attr_list / meta attr_list / utilization attr_list
+    # attr_list ::  [<score>:] [rule...] <attr>=<val> [<attr>=<val>...]
+    #
+    for x in self.xml_get_childs(node,nodes):
+      prev = None
+      for y in x.childNodes:  # <rule> or <nv>
+        if prev != y.nodeName or y.nodeName == 'rule':
+          prev = y.nodeName
+          if y.nodeName == 'rule':
+            s.append('%s %s'%(x.nodeName,y.getAttribute('data')))
+            for z in y.childNodes:
+              s.append('\t%s="%s"'%(z.getAttribute('name'),z.getAttribute('value')))
+            continue
+          else:
+            s.append(x.nodeName)
         s.append('\t%s="%s"'%(y.getAttribute('name'),y.getAttribute('value')))
 
   '''
