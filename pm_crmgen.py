@@ -201,7 +201,7 @@ class Crm:
   '''
   def optionParser(self):
     usage = '%prog [options] CSV_FILE'
-    version = '2.1'
+    version = '2.2'
     description = "  character encoding of supported CSV_FILE are 'UTF-8' and 'Shift_JIS'"
     prog = 'pm_crmgen'
     p = OptionParser(usage=usage,version=version,description=description,prog=prog)
