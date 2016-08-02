@@ -51,6 +51,7 @@ M_ORDER       = 'Order'
 M_FTOPO       = 'FTopo'
 M_TICKET      = 'Ticket'
 M_CONFIG      = 'Config'
+M_ALERT       = 'Alert'
 # {表ヘッダ文字列: 内部モード識別子}
 MODE_TBL = {
   'node':              M_NODE,
@@ -66,7 +67,8 @@ MODE_TBL = {
   'order':             M_ORDER,
   'fencing_topology':  M_FTOPO,
   'rsc_ticket':        M_TICKET,
-  'additional_config': M_CONFIG
+  'additional_config': M_CONFIG,
+  'alert':             M_ALERT
 }
 M_SKIP = 'skip'     # 次の表ヘッダまでスキップ
 
@@ -75,6 +77,12 @@ PRIM_PROP = 'p'     # Prop(erty)
 PRIM_ATTR = 'a'     # Attr(ibutes)
 PRIM_OPER = 'o'     # Oper(ation)
 PRIM_MODE = [PRIM_PROP,PRIM_ATTR,PRIM_OPER]
+
+# M_ALERTのサブモード
+ALRT_PATH = 'p'     # Path
+ALRT_ATTR = 'a'     # Attr(ibutes)
+ALRT_RECI = 'r'     # Reci(pient)
+ALRT_MODE = [ALRT_PATH,ALRT_ATTR,ALRT_RECI]
 
 # 必須列名
 RQCLM_TBL = {
@@ -93,7 +101,10 @@ RQCLM_TBL = {
   (M_ORDER,None):          ['first-rsc','then-rsc','score'],
   (M_FTOPO,None):          ['node','rsc','index'],
   (M_TICKET,None):         ['ticket','rsc'],
-  (M_CONFIG,None):         ['config']
+  (M_CONFIG,None):         ['config'],
+  (M_ALERT,ALRT_PATH):     ['path'],
+  (M_ALERT,ALRT_ATTR):     ['type','name','value'],
+  (M_ALERT,ALRT_RECI):     ['recipient']
 }
 # 非必須列名
 CLM_NODE = ['ntype']
@@ -108,6 +119,7 @@ RESOURCE_TYPE = ['primitive','group','clone','ms','master']
 ATTRIBUTE_TYPE = ['params','meta']
 NODE_ATTR_TYPE = ['attributes','utilization']
 PRIM_ATTR_TYPE = ['params','meta','utilization','operations']
+ALRT_ATTR_TYPE = ['attributes','meta']
 # unary_op
 UNARY_OP = ['defined','not_defined']
 
@@ -130,7 +142,8 @@ COMMENT_TBL = {
   'order':        '### Resource Order ###',
   'ftopo':        '### Fencing Topology ###',
   'ticket':       '### Resource Ticket ###',
-  'config':       '### Additional Config ###'
+  'config':       '### Additional Config ###',
+  'alert':        '### Alert Configuration ###'
 }
 
 # エラー/警告が発生した場合、Trueに設定する
@@ -145,15 +158,20 @@ class Crm:
   ATTR_CREATED = '_c'
   ATTR_UPDATED = '_u'
   mode = None,None
-  pcr = []; attrd = {}
-  rr = None; pr = None
+  pcr = []   # 親子関係 (parent and child relationship)
+  attrd = {}
+  rr = None  # XMLドキュメント (<resources>...</resources>のroot要素を指しておく)
+  xr = None  # XMLドキュメント (テンポラリ作業用。root要素を指しておく)
+  xc = None  # XMLドキュメントの作業中の要素を指しておく
   lineno = 0
+  req_recipient = False  # Alert表のrecipient列にデータが必要な状態の間、Trueを設定
 
   def __init__(self):
     self.input = None
     self.output = sys.stdout
     self.add_colocation = True
     self.add_order = True
+    self.add_bracket = False
     if not self.optionParser():
       sys.exit(1)
     try:
@@ -196,6 +214,8 @@ class Crm:
       help='colocation constraint' + s)
     p.add_option('-O',action='store_false',dest='add_order',default=True,
       help='order constraint' + s)
+    p.add_option('-b',action='store_true',dest='add_bracket',default=False,
+      help='each recipient of alert configuration is delimited by brackets')
     try:
       opts,args = p.parse_args()
     except SystemExit,retcode:
@@ -223,6 +243,7 @@ class Crm:
     log.level = opts.loglevel
     self.add_colocation = opts.add_colocation
     self.add_order = opts.add_order
+    self.add_bracket = opts.add_bracket
     return True
 
   def skip_mode(self,flg):
@@ -250,7 +271,20 @@ class Crm:
       if self.mode[1] == PRIM_ATTR:
         self.attrd = {}
       return True
-    elif self.mode[0] == M_SKIP and data in PRIM_MODE:
+    elif self.mode[0] == M_ALERT and data in ALRT_MODE:
+      if (not self.mode[1] and data != ALRT_PATH or
+              self.mode[1] and data == ALRT_PATH):
+        log.fmterr_l(u'Alert設定表の定義が正しくありません。')
+        self.skip_mode(True)
+        return True
+      self.mode = self.mode[0],data
+      log.debug_l(u'サブモードを[%s]にセットしました。'%self.mode[1])
+      if self.mode[1] == ALRT_ATTR:
+        self.attrd = {}
+      elif self.mode[1] == ALRT_RECI:
+        self.req_recipient = True
+      return True
+    elif self.mode[0] == M_SKIP and (data in PRIM_MODE or data in ALRT_MODE):
       log.debug_l(u'エラー検知中のためサブモード[%s]はスキップします。'%data)
       return True
     x = MODE_TBL.get(data)
@@ -260,7 +294,8 @@ class Crm:
       return False
     self.mode = x,None
     log.debug_l(u'処理モードを[%s]にセットしました。'%self.mode[0])
-    self.pcr = []; self.attrd = {}; self.pr = None
+    self.pcr = []; self.attrd = {}; self.xr = None; self.xc = None
+    self.req_recipient = False
     return True
 
   '''
@@ -304,6 +339,10 @@ class Crm:
     global errflg2; errflg2 = False
     if self.mode == (M_PRIMITIVE,None):
       log.fmterr_l(u'Primitiveリソース表の定義が正しくありません。')
+      self.skip_mode(True)
+      return True
+    elif self.mode == (M_ALERT,None):
+      log.fmterr_l(u'Alert設定表の定義が正しくありません。')
       self.skip_mode(True)
       return True
     clml = csvl[:]
@@ -568,6 +607,10 @@ class Crm:
       log.debug_l(u'追加設定表のデータを処理します。')
       self.debug_input(clmd,RIl,csvlr)
       self.csv2xml_config(clmd,csvlr)
+    elif self.mode[0] == M_ALERT:
+      log.debug_l(u'Alert設定表のデータを処理します。')
+      self.debug_input(clmd,RIl,csvl)
+      self.skip_mode(not self.csv2xml_alert(clmd,csvl))
     return True
 
   '''
@@ -853,16 +896,16 @@ class Crm:
   '''
   def csv2xml_primitive(self,clmd,csvl):
     global errflg2; errflg2 = False
-    if self.mode[1] == PRIM_PROP and not self.pr:
+    if self.mode[1] == PRIM_PROP and not self.xr:
       rscid = csvl[clmd['id']]
       if rscid:
-        self.pr = self.xml_get_rscnode(rscid,'primitive')
-        if self.pr and self.pr.getAttribute(self.ATTR_UPDATED):
+        self.xr = self.xml_get_rscnode(rscid,'primitive')
+        if self.xr and self.xr.getAttribute(self.ATTR_UPDATED):
           log.fmterr_l(
             u'[id: %s] のPrimitiveリソース表は既に設定されています。(%s行目)'
-            %(rscid,self.pr.getAttribute(self.ATTR_UPDATED)))
-        elif self.pr:
-          self.pr.setAttribute(self.ATTR_UPDATED,str(self.lineno))
+            %(rscid,self.xr.getAttribute(self.ATTR_UPDATED)))
+        elif self.xr:
+          self.xr.setAttribute(self.ATTR_UPDATED,str(self.lineno))
       else:
         log.fmterr_l(u"'id'列に値が設定されていません。")
       if not csvl[clmd['type']]:
@@ -871,7 +914,7 @@ class Crm:
         log.fmterr_l(u"'class'列に値が設定されていません。")
     elif self.mode[1] == PRIM_PROP:
       log.fmterr_l(u'Primitiveリソース表の定義が正しくありません。')
-    elif self.mode[1] != PRIM_PROP and not self.pr:
+    elif self.mode[1] != PRIM_PROP and not self.xr:
       log.fmterr_l(u"表に「リソースID」('id'列に値) が設定されていません。")
     elif self.mode[1] == PRIM_ATTR:
       if 'rule' in clmd and csvl[clmd['rule']] and not csvl[clmd['type']]:
@@ -900,11 +943,11 @@ class Crm:
     #
     if self.mode[1] == PRIM_PROP:
       for x in [x for x in RQCLM_TBL[self.mode] if csvl[clmd[x]]]:
-        self.pr.setAttribute(x,csvl[clmd[x]])
+        self.xr.setAttribute(x,csvl[clmd[x]])
     elif self.mode[1] == PRIM_ATTR:
-      return self.csv2xml_attributes(clmd,csvl,self.pr)
+      return self.csv2xml_attributes(clmd,csvl,self.xr)
     elif self.mode[1] == PRIM_OPER:
-      o = self.xml_create_child(self.xml_get_node(self.pr,'op'),optype)
+      o = self.xml_create_child(self.xml_get_node(self.xr,'op'),optype)
       for k,x in clmd.items():
         if k in RQCLM_TBL[self.mode] or not csvl[x]:
           continue
@@ -1306,6 +1349,78 @@ class Crm:
     return True
 
   '''
+    Alert設定表データのXML化
+    [引数]
+      clmd : 列情報（[列名: 列番号]）を保持する辞書
+      csvl : CSVファイル1行分のリスト
+    [戻り値]
+      True  : OK
+      False : NG（フォーマット・エラー）
+  '''
+  def csv2xml_alert(self,clmd,csvl):
+    global errflg2; errflg2 = False
+    if self.mode[1] == ALRT_ATTR:
+      if self.req_recipient:
+        log.fmterr_l(u"直前の'recipient'列に値が設定されていません。")
+      atype = csvl[clmd['type']].lower()
+      if atype and atype not in ALRT_ATTR_TYPE:
+        log.fmterr_l(u'未定義のパラメータ種別 [type: %s] が設定されています。'
+                     %csvl[clmd['type']])
+      if not atype:
+        atype = self.attrd.get('type','')
+      name = csvl[clmd['name']]
+      value = csvl[clmd['value']]
+      if not self.xr and (atype or name or value):
+        log.fmterr_l(u"本表の'path'列に値が設定されていません。")
+      if not atype and (name or value):
+        log.fmterr_l(u"'type'列に値が設定されていません。")
+      self.attrd['type'] = atype
+      self.xml_check_nv(self.xc,atype,name,value)
+    elif self.mode[1] == ALRT_RECI:
+      to = csvl[clmd['recipient']]
+      if not self.xr and to:
+        log.fmterr_l(u"本表の'path'列に値が設定されていません。")
+    if errflg2:
+      return False
+    #
+    # Example:
+    # <crm>
+    #   <alerts>
+    #     <alert path="/usr/share/pacemaker/alerts/alert_snmp.sh">
+    #       <attributes>
+    #         <nv name="trap_add_hires_timestamp_oid" value="false"/>
+    #       </attributes>
+    #       <meta>
+    #         <nv name="..." value="..."/>
+    #       </meta>
+    #       <recipient value="192.168.28.xxx">
+    #         <attributes>
+    #           <nv name="..." value="..."/>
+    #         </attributes>
+    #         <meta>
+    #           <nv name="..." value="..."/>
+    #         </meta>
+    #       </recipient>
+    #       <recipient value="192.168.28.yyy">
+    #        :
+    #       </recipient>
+    #     </alert>
+    #      :
+    #
+    if self.mode[1] == ALRT_PATH:
+      self.xr = self.xml_create_child(self.xml_get_node(self.root,'alerts'),'alert')
+      self.xc = self.xr
+      for x in [x for x in RQCLM_TBL[self.mode] if csvl[clmd[x]]]:
+        self.xr.setAttribute(x,csvl[clmd[x]])
+    elif self.mode[1] == ALRT_ATTR:
+      self.xml_append_nv(self.xml_get_node(self.xc,atype),name,value)
+    elif self.mode[1] == ALRT_RECI and to:
+      self.xc = self.xml_create_child(self.xr,'recipient')
+      self.xc.setAttribute('value',to)
+      self.req_recipient = False
+    return True
+
+  '''
     制約データのXML化が必要かチェック（重複設定値の有無をチェック）
     ->配置制約表データ（pindg/diskd）から生成する同居・起動順序制約について、
       同じ制約は生成しない
@@ -1579,7 +1694,8 @@ class Crm:
       self.xml2crm_colocation(),
       self.xml2crm_order(),
       self.xml2crm_ticket(),
-      self.xml2crm_config()
+      self.xml2crm_config(),
+      self.xml2crm_alert()
     ]
     while [x for x in s if not x]:
       s.remove(None)
@@ -1828,6 +1944,29 @@ class Crm:
       s.append('%s\n'%x.getAttribute('data'))
     if s:
       return '%s\n%s'%(COMMENT_TBL[tag],''.join(s))
+
+  def xml2crm_alert(self):
+    #
+    # alert <id> <path>
+    #   [attributes attr_list]
+    #   [meta       attr_list]
+    #   [to [{] <recipient>
+    #     [attributes attr_list]
+    #     [meta       attr_list] [}] ]
+    #
+    s = []; tag = 'alert'
+    for i,x in enumerate(self.root.getElementsByTagName(tag)):
+      z = []
+      z.append('alert alert_%d %s'%(i+1,x.getAttribute('path')))
+      self.xml2crm_attr(x,z,ALRT_ATTR_TYPE)
+      for y in x.getElementsByTagName('recipient'):
+        w = []
+        self.xml2crm_attr(y,w,ALRT_ATTR_TYPE)
+        z.append('to %s%s%s%s'%('{ 'if self.add_bracket else'',y.getAttribute('value'),
+          ' \\\n\t\t%s'%' \\\n\t\t'.join(w)if w else'',' }'if self.add_bracket else''))
+      s.append(' \\\n\t'.join(z))
+    if s:
+      return '%s\n%s\n'%(COMMENT_TBL[tag],'\n'.join(s))
 
   def xml2crm_attr(self,node,s,nodes=None):
     #
